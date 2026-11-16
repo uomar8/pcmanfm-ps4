@@ -741,9 +741,17 @@ void PcmanfmApp::handle_sdl_event(const SDL_Event& ev) {
         }
         if (m_show_prefs) {
             if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_UP) {
-                m_prefs_cursor = (m_prefs_cursor > 0) ? (m_prefs_cursor - 1) : 4;
+                m_prefs_cursor = (m_prefs_cursor > 0) ? (m_prefs_cursor - 1) : 5;
             } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN) {
-                m_prefs_cursor = (m_prefs_cursor + 1) % 5;
+                m_prefs_cursor = (m_prefs_cursor + 1) % 6;
+            } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT && m_prefs_cursor == 4) {
+                m_cfg.ui_scale -= 0.05f;
+                if (m_cfg.ui_scale < 1.10f) m_cfg.ui_scale = 1.10f;
+                ImGui::GetIO().FontGlobalScale = m_cfg.ui_scale;
+            } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT && m_prefs_cursor == 4) {
+                m_cfg.ui_scale += 0.05f;
+                if (m_cfg.ui_scale > 2.20f) m_cfg.ui_scale = 2.20f;
+                ImGui::GetIO().FontGlobalScale = m_cfg.ui_scale;
             } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_A) {
                 if (m_prefs_cursor == 0) { m_cfg.dark_theme = !m_cfg.dark_theme; apply_theme(); }
                 else if (m_prefs_cursor == 1) {
@@ -755,7 +763,7 @@ void PcmanfmApp::handle_sdl_event(const SDL_Event& ev) {
                     if (m_cfg.dual_pane) refresh_tab(cur_tab(1));
                 } else if (m_prefs_cursor == 3) {
                     m_cfg.confirm_delete = !m_cfg.confirm_delete;
-                } else if (m_prefs_cursor == 4) {
+                } else if (m_prefs_cursor == 5) {
                     save_config();
                     m_show_prefs = false;
                 }
@@ -1750,26 +1758,67 @@ void PcmanfmApp::draw_modals(void) {
     }
 
     if (m_show_prefs && !ImGui::IsPopupOpen("Preferences")) ImGui::OpenPopup("Preferences");
-    if (ImGui::BeginPopupModal("Preferences", &m_show_prefs, ImGuiWindowFlags_AlwaysAutoResize)) {
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal("Preferences", NULL, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoNav)) {
         if (!m_show_prefs) {
             ImGui::CloseCurrentPopup();
         } else {
+            auto pref_prefix = [&](int idx) {
+                if (m_prefs_cursor == idx) {
+                    ImGui::TextColored(ImVec4(0.95f, 0.72f, 0.12f, 1.0f), ">");
+                } else {
+                    ImGui::TextUnformatted(" ");
+                }
+                ImGui::SameLine();
+                if (m_prefs_cursor == idx) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.98f, 0.82f, 0.28f, 1.0f));
+                }
+            };
+            auto pref_end = [&](int idx) {
+                if (m_prefs_cursor == idx) ImGui::PopStyleColor();
+            };
+
+            pref_prefix(0);
             if (ImGui::Checkbox("Dark Theme", &m_cfg.dark_theme)) apply_theme();
+            pref_end(0);
+
+            pref_prefix(1);
             if (ImGui::Checkbox("Show Hidden Files", &m_cfg.show_hidden)) {
                 refresh_tab(m_panes[0].tabs[m_panes[0].active_tab]);
                 if (m_cfg.dual_pane) refresh_tab(m_panes[1].tabs[m_panes[1].active_tab]);
             }
+            pref_end(1);
+
+            pref_prefix(2);
             ImGui::Checkbox("Dual Pane Mode", &m_cfg.dual_pane);
+            pref_end(2);
+
+            pref_prefix(3);
             ImGui::Checkbox("Confirm Before Delete", &m_cfg.confirm_delete);
-            if (ImGui::SliderFloat("UI Scale", &m_cfg.ui_scale, 1.1f, 2.2f, "%.2f")) {
+            pref_end(3);
+
+            pref_prefix(4);
+            if (ImGui::SliderFloat("UI Scale (Left/Right)", &m_cfg.ui_scale, 1.1f, 2.2f, "%.2f")) {
                 ImGui::GetIO().FontGlobalScale = m_cfg.ui_scale;
             }
+            pref_end(4);
+
             ImGui::Separator();
-            if (ImGui::Button("Save & Close", ImVec2(160, 0))) {
+            bool save_hl = (m_prefs_cursor == 5);
+            if (save_hl) {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.95f, 0.72f, 0.12f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.05f, 0.05f, 0.05f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 3.0f);
+            }
+            if (ImGui::Button("Save & Close", ImVec2(180, 0))) {
                 save_config();
                 m_show_prefs = false;
             }
-            ImGui::SetItemDefaultFocus();
+            if (save_hl) {
+                ImGui::PopStyleVar();
+                ImGui::PopStyleColor(3);
+            }
         }
         ImGui::EndPopup();
     }
@@ -1779,7 +1828,7 @@ void PcmanfmApp::draw_modals(void) {
         if (!m_show_help) {
             ImGui::CloseCurrentPopup();
         } else {
-            ImGui::Text("PCManFM-PS4 v01.14 (Orbis OS File Manager)");
+            ImGui::Text("PCManFM-PS4 v01.15 (Orbis OS File Manager)");
             ImGui::Separator();
             ImGui::Text("D-Pad Up/Down      : Move selection");
             ImGui::Text("D-Pad Left/Right   : Parent/Enter (or Switch Pane)");
