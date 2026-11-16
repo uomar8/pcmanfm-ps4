@@ -14,7 +14,8 @@ CXX         := clang++
 LD          := ld.lld
 
 COMMON_FLAGS := --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables \
-                -O3 -march=btver2 -mtune=btver2 -D_BSD_SOURCE -D_POSIX_C_SOURCE=200809L -c \
+                -O3 -march=btver2 -mtune=btver2 -D__PS4__ -D__OPENORBIS__ -D__ORBIS__ \
+                -D_BSD_SOURCE -D_POSIX_C_SOURCE=200809L -c \
                 -isysroot $(TOOLCHAIN) -isystem $(TOOLCHAIN)/include \
                 -I$(TOOLCHAIN)/usr/include -I$(TOOLCHAIN)/usr/include/SDL2 \
                 -Isrc -Ithird_party/imgui
