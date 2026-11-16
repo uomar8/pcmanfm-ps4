@@ -835,11 +835,14 @@ void PcmanfmApp::draw_file_list(int pane_idx, TabState& tab) {
             ImGui::TableNextColumn();
             if (ent.mtime > 0) {
                 time_t t = (time_t)ent.mtime;
-                struct tm tm_buf;
-                localtime_r(&t, &tm_buf);
-                char tbuf[32];
-                strftime(tbuf, sizeof(tbuf), "%Y-%m-%d %H:%M", &tm_buf);
-                ImGui::TextUnformatted(tbuf);
+                struct tm* tm_ptr = localtime(&t);
+                if (tm_ptr) {
+                    char tbuf[32];
+                    strftime(tbuf, sizeof(tbuf), "%Y-%m-%d %H:%M", tm_ptr);
+                    ImGui::TextUnformatted(tbuf);
+                } else {
+                    ImGui::TextDisabled("-");
+                }
             } else {
                 ImGui::TextDisabled("-");
             }

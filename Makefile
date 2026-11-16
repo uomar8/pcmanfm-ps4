@@ -20,7 +20,7 @@ COMMON_FLAGS := --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables \
                 -Isrc -Ithird_party/imgui
 
 CFLAGS      := $(COMMON_FLAGS) -Werror=vla -Werror=alloca
-CXXFLAGS    := $(COMMON_FLAGS) -std=c++17 -nostdinc++ -isystem $(TOOLCHAIN)/include/c++/v1
+CXXFLAGS    := $(COMMON_FLAGS) -std=c++17 -D_LIBCPP_HAS_NO_THREADS -nostdinc++ -isystem $(TOOLCHAIN)/include/c++/v1
 
 LIBS        := -L$(TOOLCHAIN)/usr/lib -lSDL2 \
                -lc -lkernel -lc++ -lScePosix \

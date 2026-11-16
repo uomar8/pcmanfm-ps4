@@ -1,5 +1,6 @@
 #include "log.h"
 
+#include <fcntl.h>
 #include <orbis/libkernel.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -7,7 +8,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-static FILE* g_log_fp = NULL;
+static int g_log_fd = -1;
 static uint64_t g_start_us = 0;
 static const char* kLogPath = "/data/pcmanfm/log.txt";
 
@@ -18,20 +19,21 @@ const char* log_file_path(void) {
 void log_init(void) {
     mkdir("/data/pcmanfm", 0777);
     g_start_us = sceKernelGetProcessTime();
-    g_log_fp = fopen(kLogPath, "w");
-    if (g_log_fp) {
-        fprintf(g_log_fp, "=== PCManFM-PS4 Verbose Log Started ===\n");
-        fflush(g_log_fp);
-        fsync(fileno(g_log_fp));
+    g_log_fd = open(kLogPath, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if (g_log_fd >= 0) {
+        const char* hdr = "=== PCManFM-PS4 Verbose Log Started ===\n";
+        write(g_log_fd, hdr, strlen(hdr));
+        fsync(g_log_fd);
     }
-    printf("[PCManFM-PS4] Log initialized at %s\n", kLogPath);
+    printf("[PCManFM-PS4] Log initialized at %s (fd=%d)\n", kLogPath, g_log_fd);
 }
 
 void log_close(void) {
-    if (g_log_fp) {
+    if (g_log_fd >= 0) {
         log_msg("CORE", "Closing log file cleanly");
-        fclose(g_log_fp);
-        g_log_fp = NULL;
+        fsync(g_log_fd);
+        close(g_log_fd);
+        g_log_fd = -1;
     }
 }
 
@@ -47,19 +49,18 @@ void log_msg(const char* tag, const char* fmt, ...) {
     vsnprintf(msg_buf, sizeof(msg_buf), fmt, args);
     va_end(args);
 
-    printf("[%4llu.%06llu][%s] %s\n",
-           (unsigned long long)secs,
-           (unsigned long long)usecs,
-           tag ? tag : "LOG",
-           msg_buf);
+    char line_buf[1280];
+    int n = snprintf(line_buf, sizeof(line_buf), "[%4llu.%06llu][%s] %s\n",
+                     (unsigned long long)secs,
+                     (unsigned long long)usecs,
+                     tag ? tag : "LOG",
+                     msg_buf);
 
-    if (g_log_fp) {
-        fprintf(g_log_fp, "[%4llu.%06llu][%s] %s\n",
-                (unsigned long long)secs,
-                (unsigned long long)usecs,
-                tag ? tag : "LOG",
-                msg_buf);
-        fflush(g_log_fp);
-        fsync(fileno(g_log_fp));
+    printf("%s", line_buf);
+
+    if (g_log_fd >= 0 && n > 0) {
+        size_t wlen = (size_t)n < sizeof(line_buf) ? (size_t)n : sizeof(line_buf) - 1;
+        write(g_log_fd, line_buf, wlen);
+        fsync(g_log_fd);
     }
 }
