@@ -100,15 +100,29 @@ private:
     char m_ime_buf[1024];
     std::string m_ime_target_path;
 
-    // Sidebar tree root
+    // Sidebar tree root & deterministic controller focus
+    enum class FocusZone {
+        FileList = 0,
+        Sidebar = 1,
+        Toolbar = 2
+    };
     std::string m_tree_root;
     bool m_exit_requested;
     bool m_scroll_to_cursor;
-    bool m_ui_nav_mode;
+    FocusZone m_focus_zone;
+    int m_sidebar_cursor;
+    int m_toolbar_cursor;
+    int m_actions_cursor;
+    int m_delete_confirm_idx;
+    int m_prefs_cursor;
     bool m_l2_down;
     bool m_r2_down;
 
     // Helpers
+    void activate_toolbar_item(int idx);
+    void activate_actions_item(int idx);
+    int get_actions_count(void) const;
+    int get_sidebar_count(void) const;
     void load_config(void);
     void save_config(void);
     void apply_theme(void);
