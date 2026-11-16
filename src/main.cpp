@@ -58,7 +58,14 @@ int main(int argc, char* argv[]) {
         sceSystemServiceLoadExec("exit", NULL);
         return -1;
     }
-    log_msg("MAIN", "SDL_CreateRenderer OK");
+    SDL_RendererInfo rinfo;
+    if (SDL_GetRendererInfo(renderer, &rinfo) == 0) {
+        log_msg("MAIN", "SDL_CreateRenderer OK (driver=%s, renderer=%s)",
+                SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "unknown",
+                rinfo.name ? rinfo.name : "unknown");
+    } else {
+        log_msg("MAIN", "SDL_CreateRenderer OK");
+    }
 
     // Hide PS4 splash screen now that video output is ready
     int32_t splash_rc = sceSystemServiceHideSplashScreen();

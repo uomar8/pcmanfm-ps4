@@ -31,7 +31,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: /home/runner/OpenOrbis-PS4-Toolchain
-          key: openorbis-v0.5.4-sdl2-ps4-v1
+          key: openorbis-v0.5.4-sdl2-ps4-v2
 
       - name: Download & Extract OpenOrbis v0.5.4
         if: steps.cache-oo.outputs.cache-hit != 'true'
@@ -52,7 +52,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_FLAGS_RELEASE="-O3 -march=btver2 -mtune=btver2 -DNDEBUG -Wno-error=declaration-after-statement" \
             -DSDL_SHARED=OFF -DSDL_STATIC=ON \
-            -DSDL_TEST=OFF -DSDL_AUDIO=OFF \
+            -DSDL_TEST=OFF -DSDL_AUDIO=OFF -DSDL_PTHREADS_SEM=OFF \
             -DCMAKE_INSTALL_PREFIX="$OO_PS4_TOOLCHAIN/usr"
           cmake --build /tmp/SDL-PS4/build -j"$(nproc)"
           cmake --install /tmp/SDL-PS4/build
