@@ -76,7 +76,12 @@ PcmanfmApp::PcmanfmApp()
       m_tree_root("/data"),
       m_exit_requested(false),
       m_scroll_to_cursor(false),
-      m_ui_nav_mode(false),
+      m_focus_zone(FocusZone::FileList),
+      m_sidebar_cursor(0),
+      m_toolbar_cursor(0),
+      m_actions_cursor(0),
+      m_delete_confirm_idx(0),
+      m_prefs_cursor(0),
       m_l2_down(false),
       m_r2_down(false) {
     memset(&m_op_prog, 0, sizeof(m_op_prog));
