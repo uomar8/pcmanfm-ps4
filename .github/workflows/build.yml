@@ -50,7 +50,7 @@ jobs:
           cmake -S /tmp/SDL-PS4 -B /tmp/SDL-PS4/build -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE=/tmp/SDL-PS4/cmake/openorbis.cmake \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_FLAGS_RELEASE="-O3 -march=btver2 -mtune=btver2 -DNDEBUG" \
+            -DCMAKE_C_FLAGS_RELEASE="-O3 -march=btver2 -mtune=btver2 -DNDEBUG -Wno-error=declaration-after-statement" \
             -DSDL_SHARED=OFF -DSDL_STATIC=ON \
             -DSDL_TEST=OFF -DSDL_AUDIO=OFF \
             -DCMAKE_INSTALL_PREFIX="$OO_PS4_TOOLCHAIN/usr"
