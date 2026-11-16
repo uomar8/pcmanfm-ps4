@@ -98,7 +98,6 @@ int main(int argc, char* argv[]) {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
     io.IniFilename = "/data/pcmanfm/imgui.ini";
 
     ImGui_ImplSDL2_InitForSDLRenderer(window, renderer);
@@ -127,6 +126,7 @@ int main(int argc, char* argv[]) {
 
         ImGui_ImplSDLRenderer2_NewFrame();
         ImGui_ImplSDL2_NewFrame();
+        app.prepare_imgui_frame();
         ImGui::NewFrame();
 
         app.render_frame();

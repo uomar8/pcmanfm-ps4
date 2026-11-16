@@ -408,14 +408,28 @@ void PcmanfmApp::handle_sdl_event(const SDL_Event& ev) {
                          m_show_text_viewer || m_show_hex_viewer || m_show_prefs ||
                          m_show_help || m_show_op_modal || m_ime_fallback_open || m_ime_using_ps4;
 
+        const char* btn_name = SDL_GameControllerGetStringForButton((SDL_GameControllerButton)ev.cbutton.button);
+        log_msg("UI", "PadDown btn=%d (%s) any_modal=%d actions=%d active_pane=%d",
+                (int)ev.cbutton.button, btn_name ? btn_name : "?", any_modal ? 1 : 0,
+                m_show_actions_menu ? 1 : 0, m_active_pane);
+
         if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_B) {
-            if (m_show_actions_menu) { m_show_actions_menu = false; return; }
+            if (m_show_actions_menu) {
+                log_msg("UI", "ActionsMenu closed by Circle (B)");
+                m_show_actions_menu = false;
+                return;
+            }
             if (m_show_delete_confirm) { m_show_delete_confirm = false; return; }
             if (m_show_properties) { m_show_properties = false; return; }
             if (m_show_text_viewer) { m_show_text_viewer = false; return; }
             if (m_show_hex_viewer) { m_show_hex_viewer = false; return; }
             if (m_show_prefs) { m_show_prefs = false; return; }
             if (m_show_help) { m_show_help = false; return; }
+            if (m_ime_fallback_open) { m_ime_fallback_open = false; m_ime_purpose = ImePurpose::None; return; }
+            if (m_show_op_modal && __atomic_load_n(&m_op_prog.active, __ATOMIC_ACQUIRE)) {
+                __atomic_store_n(&m_op_prog.cancel_req, 1, __ATOMIC_RELEASE);
+                return;
+            }
             if (!any_modal) {
                 TabState& tab = active_tab();
                 char* parent = new char[2048];
@@ -435,11 +449,25 @@ void PcmanfmApp::handle_sdl_event(const SDL_Event& ev) {
             case SDL_CONTROLLER_BUTTON_DPAD_UP:
                 if (!tab.entries.empty()) {
                     tab.cursor_idx = (tab.cursor_idx > 0) ? (tab.cursor_idx - 1) : ((int)tab.entries.size() - 1);
+                    m_scroll_to_cursor = true;
                 }
                 break;
             case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
                 if (!tab.entries.empty()) {
                     tab.cursor_idx = (tab.cursor_idx + 1) % (int)tab.entries.size();
+                    m_scroll_to_cursor = true;
+                }
+                break;
+            case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
+                if (m_cfg.dual_pane && m_active_pane != 0) {
+                    m_active_pane = 0;
+                    log_msg("UI", "Switched active pane -> 0");
+                }
+                break;
+            case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
+                if (m_cfg.dual_pane && m_active_pane != 1) {
+                    m_active_pane = 1;
+                    log_msg("UI", "Switched active pane -> 1");
                 }
                 break;
             case SDL_CONTROLLER_BUTTON_A: // Cross
@@ -452,6 +480,7 @@ void PcmanfmApp::handle_sdl_event(const SDL_Event& ev) {
                 break;
             case SDL_CONTROLLER_BUTTON_Y: // Triangle -> Actions menu
                 m_show_actions_menu = true;
+                log_msg("UI", "ActionsMenu opened by Triangle (Y)");
                 break;
             case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: { // L1 -> Prev tab
                 PaneState& p = m_panes[m_active_pane];
@@ -991,9 +1020,15 @@ void PcmanfmApp::draw_status_bar(void) {
 void PcmanfmApp::draw_modals(void) {
     TabState& tab = active_tab();
 
-    if (m_show_actions_menu && !ImGui::IsPopupOpen("ActionsMenu")) ImGui::OpenPopup("ActionsMenu");
+    if (m_show_actions_menu && !ImGui::IsPopupOpen("ActionsMenu")) {
+        log_msg("UI", "OpenPopup(ActionsMenu)");
+        ImGui::OpenPopup("ActionsMenu");
+    }
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    bool was_actions_open = m_show_actions_menu;
     if (ImGui::BeginPopupModal("ActionsMenu", &m_show_actions_menu, ImGuiWindowFlags_AlwaysAutoResize)) {
         if (!m_show_actions_menu) {
+            if (was_actions_open) log_msg("UI", "ActionsMenu closed by ImGui (p_open=false)");
             ImGui::CloseCurrentPopup();
         } else {
             if (ImGui::Button("Copy", ImVec2(320, 0))) { do_copy(false); m_show_actions_menu = false; }
@@ -1243,7 +1278,7 @@ void PcmanfmApp::draw_modals(void) {
         if (!m_show_help) {
             ImGui::CloseCurrentPopup();
         } else {
-            ImGui::Text("PCManFM-PS4 v01.09 (Orbis OS File Manager)");
+            ImGui::Text("PCManFM-PS4 v01.10 (Orbis OS File Manager)");
             ImGui::Separator();
             ImGui::Text("D-Pad Up/Down      : Move selection");
             ImGui::Text("D-Pad Left/Right   : Switch pane (Dual Pane)");
@@ -1315,27 +1350,39 @@ void PcmanfmApp::draw_modals(void) {
     }
 }
 
-void PcmanfmApp::render_frame(void) {
-    poll_ime();
-
-    // Enable ImGui Gamepad Nav ONLY when a modal/popup/menu is open so main file list D-Pad nav never conflicts
+void PcmanfmApp::prepare_imgui_frame(void) {
+    // Enable ImGui Gamepad Nav BEFORE ImGui::NewFrame() ONLY when a modal/popup/menu is open
+    // so main file-list D-Pad nav never conflicts and toolbar buttons (e.g. ^ Up) never steal focus.
     bool any_popup = m_show_actions_menu || m_show_delete_confirm || m_show_properties ||
                      m_show_text_viewer || m_show_hex_viewer || m_show_prefs ||
                      m_show_help || m_show_op_modal || m_ime_fallback_open ||
                      ImGui::IsPopupOpen(NULL, ImGuiPopupFlags_AnyPopupId);
     ImGuiIO& io = ImGui::GetIO();
+    static int last_nav = -1;
+    int cur_nav = any_popup ? 1 : 0;
+    if (cur_nav != last_nav) {
+        log_msg("UI", "NavEnableGamepad -> %d (actions=%d del=%d op=%d prefs=%d help=%d)",
+                cur_nav, m_show_actions_menu ? 1 : 0, m_show_delete_confirm ? 1 : 0,
+                m_show_op_modal ? 1 : 0, m_show_prefs ? 1 : 0, m_show_help ? 1 : 0);
+        last_nav = cur_nav;
+    }
     if (any_popup) {
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
     } else {
         io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableGamepad;
     }
+}
+
+void PcmanfmApp::render_frame(void) {
+    poll_ime();
 
     ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(vp->WorkPos);
     ImGui::SetNextWindowSize(vp->WorkSize);
     ImGuiWindowFlags root_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                                   ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
-                                  ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoBringToFrontOnFocus;
+                                  ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoBringToFrontOnFocus |
+                                  ImGuiWindowFlags_NoNavInputs | ImGuiWindowFlags_NoNavFocus;
 
     ImGui::Begin("PCManFM-PS4", NULL, root_flags);
     draw_menu_bar();

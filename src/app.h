@@ -56,6 +56,7 @@ public:
     bool init(void);
     void shutdown(void);
     void handle_sdl_event(const SDL_Event& ev);
+    void prepare_imgui_frame(void);
     void render_frame(void);
     bool should_exit(void) const { return m_exit_requested; }
 
