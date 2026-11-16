@@ -540,6 +540,98 @@ void PcmanfmApp::activate_actions_item(int idx) {
     }
 }
 
+int PcmanfmApp::get_menubar_item_count(int menu_idx) const {
+    switch (menu_idx) {
+        case 0: return 4; // File: New Tab, New Folder, Properties, Exit
+        case 1: return 8; // Edit: Cut, Copy, Paste, Rename, Delete, Select All, Clear Sel, Prefs
+        case 2: return 6; // View: Reload, Hidden, Dual Pane, Detailed, Compact, Icons
+        case 3: return 8; // Go: /data, /data/pkg, usb0, usb1, /user, /app0, /, Go to Path
+        case 4: return 1 + (int)m_bookmarks.size(); // Bookmarks: Bookmark Current + saved
+        case 5: return 2; // Tools: View Verbose Log, Actions Menu
+        case 6: return 1; // Help: Controls & About
+        default: return 0;
+    }
+}
+
+void PcmanfmApp::activate_menubar_item(int menu_idx, int item_idx) {
+    TabState& tab = active_tab();
+    m_menubar_open = false;
+    m_focus_zone = FocusZone::FileList;
+    switch (menu_idx) {
+        case 0: // File
+            if (item_idx == 0) open_new_tab(m_active_pane, tab.path.c_str());
+            else if (item_idx == 1) start_ime(ImePurpose::NewFolder, "New Folder Name", "NewFolder");
+            else if (item_idx == 2 && tab.cursor_idx >= 0 && tab.cursor_idx < (int)tab.entries.size()) {
+                m_inspect_entry = tab.entries[tab.cursor_idx];
+                m_show_properties = true;
+            } else if (item_idx == 3) m_exit_requested = true;
+            break;
+        case 1: // Edit
+            if (item_idx == 0) do_copy(true);
+            else if (item_idx == 1) do_copy(false);
+            else if (item_idx == 2) do_paste();
+            else if (item_idx == 3 && tab.cursor_idx >= 0 && tab.cursor_idx < (int)tab.entries.size()) {
+                const DirEntry& ent = tab.entries[tab.cursor_idx];
+                start_ime(ImePurpose::Rename, "Rename Item", ent.name.c_str(), ent.full_path.c_str());
+            } else if (item_idx == 4) {
+                if (m_cfg.confirm_delete) { m_delete_confirm_idx = 0; m_show_delete_confirm = true; }
+                else do_delete_confirmed();
+            } else if (item_idx == 5) {
+                for (size_t i = 0; i < tab.selected.size(); ++i) tab.selected[i] = true;
+            } else if (item_idx == 6) {
+                for (size_t i = 0; i < tab.selected.size(); ++i) tab.selected[i] = false;
+            } else if (item_idx == 7) {
+                m_prefs_cursor = 0;
+                m_show_prefs = true;
+            }
+            break;
+        case 2: // View
+            if (item_idx == 0) refresh_tab(tab);
+            else if (item_idx == 1) { m_cfg.show_hidden = !m_cfg.show_hidden; refresh_tab(tab); }
+            else if (item_idx == 2) { m_cfg.dual_pane = !m_cfg.dual_pane; if (m_cfg.dual_pane) refresh_tab(cur_tab(1)); }
+            else if (item_idx == 3) m_cfg.view_mode = ViewMode::Detailed;
+            else if (item_idx == 4) m_cfg.view_mode = ViewMode::Compact;
+            else if (item_idx == 5) m_cfg.view_mode = ViewMode::Icons;
+            break;
+        case 3: { // Go
+            static const char* go_paths[] = {"/data", "/data/pkg", "/mnt/usb0", "/mnt/usb1", "/user", "/app0", "/"};
+            if (item_idx >= 0 && item_idx < 7) navigate_to(tab, go_paths[item_idx], true);
+            else if (item_idx == 7) start_ime(ImePurpose::GoToPath, "Go to Path", tab.path.c_str());
+            break;
+        }
+        case 4: // Bookmarks
+            if (item_idx == 0) {
+                const char* cur = tab.path.c_str();
+                const char* base = strrchr(cur, '/');
+                start_ime(ImePurpose::AddBookmark, "Bookmark Name", (base && base[1]) ? base + 1 : cur, cur);
+            } else {
+                int bidx = item_idx - 1;
+                if (bidx >= 0 && bidx < (int)m_bookmarks.size()) {
+                    navigate_to(tab, m_bookmarks[bidx].path.c_str(), true);
+                }
+            }
+            break;
+        case 5: // Tools
+            if (item_idx == 0) {
+                m_inspect_entry.name = "log.txt";
+                m_inspect_entry.full_path = log_file_path();
+                m_preview_data.clear();
+                m_preview_error.clear();
+                vfs_read_file_preview(log_file_path(), 65536, m_preview_data, m_preview_total_size, m_preview_error);
+                m_show_text_viewer = true;
+            } else if (item_idx == 1) {
+                m_actions_cursor = 0;
+                m_show_actions_menu = true;
+            }
+            break;
+        case 6: // Help
+            m_show_help = true;
+            break;
+        default:
+            break;
+    }
+}
+
 void PcmanfmApp::handle_sdl_event(const SDL_Event& ev) {
     if (ev.type == SDL_QUIT) {
         m_exit_requested = true;
@@ -552,6 +644,7 @@ void PcmanfmApp::handle_sdl_event(const SDL_Event& ev) {
         if (ev.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT) {
             bool pressed = (ev.caxis.value > 16000);
             if (pressed && !m_l2_down && !any_modal) {
+                m_menubar_open = false;
                 m_focus_zone = (m_focus_zone == FocusZone::Sidebar) ? FocusZone::FileList : FocusZone::Sidebar;
                 log_msg("UI", "L2 -> FocusZone = %d", (int)m_focus_zone);
             }
@@ -559,7 +652,19 @@ void PcmanfmApp::handle_sdl_event(const SDL_Event& ev) {
         } else if (ev.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT) {
             bool pressed = (ev.caxis.value > 16000);
             if (pressed && !m_r2_down && !any_modal) {
-                m_focus_zone = (m_focus_zone == FocusZone::Toolbar) ? FocusZone::FileList : FocusZone::Toolbar;
+                m_menubar_open = false;
+                if (m_focus_zone == FocusZone::FileList || m_focus_zone == FocusZone::Sidebar) {
+                    m_focus_zone = FocusZone::Toolbar;
+                    TabState& tab = active_tab();
+                    if ((m_toolbar_cursor == 0 && tab.history_back.empty()) ||
+                        (m_toolbar_cursor == 1 && tab.history_fwd.empty())) {
+                        m_toolbar_cursor = 2; // ^ Up
+                    }
+                } else if (m_focus_zone == FocusZone::Toolbar) {
+                    m_focus_zone = FocusZone::MenuBar;
+                } else {
+                    m_focus_zone = FocusZone::FileList;
+                }
                 log_msg("UI", "R2 -> FocusZone = %d", (int)m_focus_zone);
             }
             m_r2_down = pressed;
@@ -588,6 +693,10 @@ void PcmanfmApp::handle_sdl_event(const SDL_Event& ev) {
             if (m_ime_fallback_open) { m_ime_fallback_open = false; m_ime_purpose = ImePurpose::None; return; }
             if (m_show_op_modal && __atomic_load_n(&m_op_prog.active, __ATOMIC_ACQUIRE)) {
                 __atomic_store_n(&m_op_prog.cancel_req, 1, __ATOMIC_RELEASE);
+                return;
+            }
+            if (!any_modal && m_focus_zone == FocusZone::MenuBar && m_menubar_open) {
+                m_menubar_open = false;
                 return;
             }
             if (!any_modal && m_focus_zone != FocusZone::FileList) {
@@ -702,10 +811,44 @@ void PcmanfmApp::handle_sdl_event(const SDL_Event& ev) {
                 m_toolbar_cursor = (m_toolbar_cursor > 0) ? (m_toolbar_cursor - 1) : (tcnt - 1);
             } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT) {
                 m_toolbar_cursor = (m_toolbar_cursor + 1) % tcnt;
+            } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_UP) {
+                m_menubar_open = false;
+                m_focus_zone = FocusZone::MenuBar;
             } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN) {
                 m_focus_zone = FocusZone::FileList;
             } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_A) {
                 activate_toolbar_item(m_toolbar_cursor);
+            }
+            return;
+        }
+
+        // MenuBar zone (R2 twice or D-Pad Up from Toolbar)
+        if (m_focus_zone == FocusZone::MenuBar) {
+            if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT) {
+                m_menubar_cursor = (m_menubar_cursor > 0) ? (m_menubar_cursor - 1) : 6;
+                m_menubar_item_cursor = 0;
+            } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT) {
+                m_menubar_cursor = (m_menubar_cursor + 1) % 7;
+                m_menubar_item_cursor = 0;
+            } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN) {
+                if (m_menubar_open) {
+                    int icnt = get_menubar_item_count(m_menubar_cursor);
+                    if (icnt > 0) m_menubar_item_cursor = (m_menubar_item_cursor + 1) % icnt;
+                } else {
+                    m_focus_zone = FocusZone::Toolbar;
+                }
+            } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_UP) {
+                if (m_menubar_open) {
+                    int icnt = get_menubar_item_count(m_menubar_cursor);
+                    if (icnt > 0) m_menubar_item_cursor = (m_menubar_item_cursor > 0) ? (m_menubar_item_cursor - 1) : (icnt - 1);
+                }
+            } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_A) {
+                if (!m_menubar_open) {
+                    m_menubar_open = true;
+                    m_menubar_item_cursor = 0;
+                } else {
+                    activate_menubar_item(m_menubar_cursor, m_menubar_item_cursor);
+                }
             }
             return;
         }
@@ -804,6 +947,67 @@ void PcmanfmApp::handle_sdl_event(const SDL_Event& ev) {
 
 void PcmanfmApp::draw_menu_bar(void) {
     if (ImGui::BeginMenuBar()) {
+        if (m_focus_zone == FocusZone::MenuBar) {
+            static const char* menu_names[] = {"File", "Edit", "View", "Go", "Bookmarks", "Tools", "Help"};
+            float open_x = 8.0f;
+            float bar_h = ImGui::GetFrameHeight();
+            for (int m = 0; m < 7; ++m) {
+                bool active = (m_menubar_cursor == m);
+                if (active) {
+                    open_x = ImGui::GetCursorScreenPos().x;
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.95f, 0.72f, 0.12f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.05f, 0.05f, 0.05f, 1.0f));
+                } else {
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.16f, 0.18f, 0.22f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.92f, 0.94f, 0.98f, 1.0f));
+                }
+                if (ImGui::Button(menu_names[m])) {
+                    m_menubar_cursor = m;
+                    m_menubar_open = true;
+                    m_menubar_item_cursor = 0;
+                }
+                ImGui::PopStyleColor(2);
+                ImGui::SameLine();
+            }
+            if (m_menubar_open) {
+                ImGui::SetNextWindowPos(ImVec2(open_x, bar_h + 4.0f));
+                ImGui::Begin("##MenuDrop", NULL,
+                             ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize |
+                             ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNav);
+                std::vector<const char*> drop;
+                if (m_menubar_cursor == 0) {
+                    drop = {"New Tab", "New Folder...", "Properties", "Exit to XMB"};
+                } else if (m_menubar_cursor == 1) {
+                    drop = {"Cut", "Copy", "Paste", "Rename...", "Delete", "Select All", "Clear Selection", "Preferences"};
+                } else if (m_menubar_cursor == 2) {
+                    drop = {"Reload", "Toggle Hidden Files", "Toggle Dual Pane", "Detailed List", "Compact View", "Icon View"};
+                } else if (m_menubar_cursor == 3) {
+                    drop = {"Data (/data)", "PKG (/data/pkg)", "USB 0 (/mnt/usb0)", "USB 1 (/mnt/usb1)",
+                            "User (/user)", "Assets (/app0)", "Root (/)", "Go to Path..."};
+                } else if (m_menubar_cursor == 4) {
+                    drop.push_back("Bookmark Current Folder");
+                    for (size_t b = 0; b < m_bookmarks.size(); ++b) drop.push_back(m_bookmarks[b].label.c_str());
+                } else if (m_menubar_cursor == 5) {
+                    drop = {"View Verbose Log", "Actions Menu"};
+                } else {
+                    drop = {"Controls & About"};
+                }
+                for (int i = 0; i < (int)drop.size(); ++i) {
+                    bool hl = (m_menubar_item_cursor == i);
+                    if (hl) {
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.95f, 0.72f, 0.12f, 1.0f));
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.05f, 0.05f, 0.05f, 1.0f));
+                    }
+                    if (ImGui::Button(drop[i], ImVec2(260, 0))) {
+                        activate_menubar_item(m_menubar_cursor, i);
+                    }
+                    if (hl) ImGui::PopStyleColor(2);
+                }
+                ImGui::End();
+            }
+            ImGui::EndMenuBar();
+            return;
+        }
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("New Tab", "Ctrl+T")) {
                 open_new_tab(m_active_pane, active_tab().path.c_str());
@@ -916,38 +1120,49 @@ void PcmanfmApp::draw_menu_bar(void) {
 
 void PcmanfmApp::draw_toolbar(void) {
     TabState& tab = active_tab();
+    bool tb_focus = (m_focus_zone == FocusZone::Toolbar);
+    auto begin_tb_hl = [&](int idx) {
+        if (tb_focus && m_toolbar_cursor == idx) {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.95f, 0.72f, 0.12f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.05f, 0.05f, 0.05f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 3.0f);
+        }
+    };
+    auto end_tb_hl = [&](int idx) {
+        if (tb_focus && m_toolbar_cursor == idx) {
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(3);
+        }
+    };
 
+    begin_tb_hl(0);
     ImGui::BeginDisabled(tab.history_back.empty());
-    if (ImGui::Button("< Back")) {
-        tab.history_fwd.push_back(tab.path);
-        std::string prev = tab.history_back.back();
-        tab.history_back.pop_back();
-        navigate_to(tab, prev.c_str(), false);
-    }
+    if (ImGui::Button("< Back")) activate_toolbar_item(0);
     ImGui::EndDisabled();
+    end_tb_hl(0);
     ImGui::SameLine();
 
+    begin_tb_hl(1);
     ImGui::BeginDisabled(tab.history_fwd.empty());
-    if (ImGui::Button("Fwd >")) {
-        tab.history_back.push_back(tab.path);
-        std::string nxt = tab.history_fwd.back();
-        tab.history_fwd.pop_back();
-        navigate_to(tab, nxt.c_str(), false);
-    }
+    if (ImGui::Button("Fwd >")) activate_toolbar_item(1);
     ImGui::EndDisabled();
+    end_tb_hl(1);
     ImGui::SameLine();
 
-    if (ImGui::Button("^ Up")) {
-        char* parent = new char[2048];
-        vfs_parent_path(tab.path.c_str(), parent, 2048);
-        if (tab.path != parent) navigate_to(tab, parent, true);
-        delete[] parent;
-    }
+    begin_tb_hl(2);
+    if (ImGui::Button("^ Up")) activate_toolbar_item(2);
+    end_tb_hl(2);
     ImGui::SameLine();
 
-    if (ImGui::Button("Home")) navigate_to(tab, "/data", true);
+    begin_tb_hl(3);
+    if (ImGui::Button("Home")) activate_toolbar_item(3);
+    end_tb_hl(3);
     ImGui::SameLine();
-    if (ImGui::Button("Refresh")) refresh_tab(tab);
+
+    begin_tb_hl(4);
+    if (ImGui::Button("Refresh")) activate_toolbar_item(4);
+    end_tb_hl(4);
     ImGui::SameLine();
 
     // Path bar button (opens IME)
@@ -956,36 +1171,31 @@ void PcmanfmApp::draw_toolbar(void) {
     float avail = ImGui::GetContentRegionAvail().x;
     float right_controls = 460.0f;
     float path_w = avail > right_controls + 200.0f ? avail - right_controls : 220.0f;
-    if (ImGui::Button(path_btn, ImVec2(path_w, 0))) {
-        start_ime(ImePurpose::GoToPath, "Enter Directory Path", tab.path.c_str());
-    }
+    begin_tb_hl(5);
+    if (ImGui::Button(path_btn, ImVec2(path_w, 0))) activate_toolbar_item(5);
+    end_tb_hl(5);
     ImGui::SameLine();
 
-    if (ImGui::Button(tab.search_filter.empty() ? "Filter" : "Clear Filter")) {
-        if (tab.search_filter.empty()) {
-            start_ime(ImePurpose::FilterSearch, "Filter Filename", "");
-        } else {
-            tab.search_filter.clear();
-        }
-    }
+    begin_tb_hl(6);
+    if (ImGui::Button(tab.search_filter.empty() ? "Filter" : "Clear Filter")) activate_toolbar_item(6);
+    end_tb_hl(6);
     ImGui::SameLine();
 
     const char* vm_label = (m_cfg.view_mode == ViewMode::Detailed) ? "List"
                          : (m_cfg.view_mode == ViewMode::Compact) ? "Compact" : "Icons";
-    if (ImGui::Button(vm_label)) {
-        m_cfg.view_mode = (ViewMode)(((int)m_cfg.view_mode + 1) % 3);
-    }
+    begin_tb_hl(7);
+    if (ImGui::Button(vm_label)) activate_toolbar_item(7);
+    end_tb_hl(7);
     ImGui::SameLine();
 
-    if (ImGui::Button(m_cfg.dual_pane ? "Single Pane" : "Dual Pane")) {
-        m_cfg.dual_pane = !m_cfg.dual_pane;
-        if (m_cfg.dual_pane) refresh_tab(cur_tab(1));
-    }
+    begin_tb_hl(8);
+    if (ImGui::Button(m_cfg.dual_pane ? "Single Pane" : "Dual Pane")) activate_toolbar_item(8);
+    end_tb_hl(8);
     ImGui::SameLine();
 
-    if (ImGui::Button("Actions")) {
-        m_show_actions_menu = true;
-    }
+    begin_tb_hl(9);
+    if (ImGui::Button("Actions")) activate_toolbar_item(9);
+    end_tb_hl(9);
 }
 
 void PcmanfmApp::draw_tree_node(const char* path, const char* label, int depth) {
@@ -1305,11 +1515,14 @@ void PcmanfmApp::draw_status_bar(void) {
                            "[SIDEBAR FOCUS] D-Pad Up/Down: Select Place/Bookmark | Cross: Go | L2 / Circle / Right: Back to Files");
     } else if (m_focus_zone == FocusZone::Toolbar) {
         ImGui::TextColored(ImVec4(0.98f, 0.80f, 0.25f, 1.0f),
-                           "[TOOLBAR FOCUS] D-Pad Left/Right: Select Button | Cross: Click | R2 / Circle / Down: Back to Files");
+                           "[TOOLBAR FOCUS] D-Pad Left/Right: Select | Up: Top Menu | Cross: Click | R2 / Circle / Down: Files");
+    } else if (m_focus_zone == FocusZone::MenuBar) {
+        ImGui::TextColored(ImVec4(0.98f, 0.80f, 0.25f, 1.0f),
+                           "[MENU BAR FOCUS] D-Pad Left/Right: Switch Menu | Cross: Open/Run | Down: Toolbar | Circle/R2: Files");
     } else if (!m_status_toast.empty() && now < m_toast_until_us) {
         ImGui::TextColored(ImVec4(0.45f, 0.88f, 0.98f, 1.0f), "%s", m_status_toast.c_str());
     } else {
-        ImGui::Text("%zu items | Selected: %zu (%s) | Clipboard: %zu (%s) | [L2] Sidebar  [R2] Toolbar  [Triangle] Actions",
+        ImGui::Text("%zu items | Selected: %zu (%s) | Clipboard: %zu (%s) | [L2] Sidebar  [R2] Toolbar/Menu  [Triangle] Actions",
                     tab.entries.size(),
                     sel_count, sel_buf,
                     m_clipboard_paths.size(),
@@ -1566,7 +1779,7 @@ void PcmanfmApp::draw_modals(void) {
         if (!m_show_help) {
             ImGui::CloseCurrentPopup();
         } else {
-            ImGui::Text("PCManFM-PS4 v01.13 (Orbis OS File Manager)");
+            ImGui::Text("PCManFM-PS4 v01.14 (Orbis OS File Manager)");
             ImGui::Separator();
             ImGui::Text("D-Pad Up/Down      : Move selection");
             ImGui::Text("D-Pad Left/Right   : Parent/Enter (or Switch Pane)");
@@ -1576,7 +1789,7 @@ void PcmanfmApp::draw_modals(void) {
             ImGui::Text("Triangle (/\\)      : Actions menu (Copy/Cut/Paste/Rename/Delete)");
             ImGui::Text("L1 / R1            : Switch tabs (or Switch Pane)");
             ImGui::Text("L2                 : Focus Left Sidebar (Places & Bookmarks)");
-            ImGui::Text("R2                 : Focus Top Toolbar (Up / Filter / View / Path)");
+            ImGui::Text("R2                 : Focus Toolbar -> Top Menu Bar (File/Edit/View/Go)");
             ImGui::Text("Select / Share     : Toggle hidden files");
             ImGui::Text("Options            : Preferences");
             ImGui::Text("FTP Debug Log      : /data/pcmanfm/log.txt");

@@ -104,7 +104,8 @@ private:
     enum class FocusZone {
         FileList = 0,
         Sidebar = 1,
-        Toolbar = 2
+        Toolbar = 2,
+        MenuBar = 3
     };
     std::string m_tree_root;
     bool m_exit_requested;
@@ -112,6 +113,9 @@ private:
     FocusZone m_focus_zone;
     int m_sidebar_cursor;
     int m_toolbar_cursor;
+    int m_menubar_cursor;
+    bool m_menubar_open;
+    int m_menubar_item_cursor;
     int m_actions_cursor;
     int m_delete_confirm_idx;
     int m_prefs_cursor;
@@ -121,6 +125,8 @@ private:
     // Helpers
     void activate_toolbar_item(int idx);
     void activate_actions_item(int idx);
+    int get_menubar_item_count(int menu_idx) const;
+    void activate_menubar_item(int menu_idx, int item_idx);
     int get_actions_count(void) const;
     int get_sidebar_count(void) const;
     void load_config(void);
