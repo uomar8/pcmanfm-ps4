@@ -20,6 +20,16 @@ new_gles2 = "    # set(SDL_VIDEO_RENDER_OGL_ES2 1) # disabled for sceVideoOut so
 assert old_gles2 in cs, "CMakeLists.txt SDL_VIDEO_RENDER_OGL_ES2 not found"
 cmake_txt.write_text(cs.replace(old_gles2, new_gles2, 1))
 
+for rel in [
+    "src/render/SDL_render.c",
+    "src/render/opengles2/SDL_render_gles2.c",
+    "src/render/opengles2/SDL_shaders_gles2.c",
+]:
+    fp = root / rel
+    txt = fp.read_text()
+    txt = txt.replace("#if SDL_VIDEO_RENDER_OGL_ES2", "#if 0 /* SDL_VIDEO_RENDER_OGL_ES2 */")
+    fp.write_text(txt)
+
 # 2. SDL_ps4video.c: add sceVideoOut software framebuffer + skip Piglet + preserve SDL_LogSetOutputFunction
 ps4_c = root / "src/video/ps4/SDL_ps4video.c"
 s = ps4_c.read_text()
