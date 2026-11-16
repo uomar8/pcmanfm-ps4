@@ -233,13 +233,7 @@ old_gl = """    device->GL_LoadLibrary = PS4_GLES_LoadLibrary;
 assert old_gl in s, "GL_* block not found"
 s = s.replace(old_gl, "    /* GL_* disabled for sceVideoOut software framebuffer */", 1)
 
-s = s.replace("SDL_EGL_MakeCurrent(_this, NULL, NULL);", "/* egl disabled */")
-s = s.replace("SDL_EGL_DestroySurface(_this, data->egl_surface);", "/* egl disabled */")
-s = s.replace("data->egl_surface = SDL_EGL_CreateSurface(_this, &ps4_egl_window);", "/* egl disabled */")
-s = s.replace("SDL_EGL_MakeCurrent(_this, data->egl_surface, ctx);", "/* egl disabled */")
-s = s.replace("PS4_PigletExit();", "/* piglet disabled */")
-
-# Make EGL optional in PS4_CreateWindow
+# Make EGL optional in PS4_CreateWindow (must run before global SDL_EGL_CreateSurface replace)
 old_cw = """    if (!_this->egl_data) {
         return SDL_SetError("egl not initialized");
     }
@@ -263,6 +257,12 @@ new_cw = """    window_data = (SDL_WindowData *) SDL_calloc(1, sizeof(SDL_Window
     }"""
 assert old_cw in s, "PS4_CreateWindow EGL block not found"
 s = s.replace(old_cw, new_cw, 1)
+
+s = s.replace("SDL_EGL_MakeCurrent(_this, NULL, NULL);", "/* egl disabled */")
+s = s.replace("SDL_EGL_DestroySurface(_this, data->egl_surface);", "/* egl disabled */")
+s = s.replace("data->egl_surface = SDL_EGL_CreateSurface(_this, &ps4_egl_window);", "/* egl disabled */")
+s = s.replace("SDL_EGL_MakeCurrent(_this, data->egl_surface, ctx);", "/* egl disabled */")
+s = s.replace("PS4_PigletExit();", "/* piglet disabled */")
 
 ps4_c.write_text(s)
 print("Patched SDL-PS4 successfully for sceVideoOut software framebuffer.")
