@@ -23,13 +23,13 @@ COMMON_FLAGS := --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables \
 CFLAGS      := $(COMMON_FLAGS) -Werror=vla -Werror=alloca
 CXXFLAGS    := $(COMMON_FLAGS) -std=c++17 -nostdinc++ -isystem $(TOOLCHAIN)/include/c++/v1
 
-LIBS        := -L$(TOOLCHAIN)/usr/lib -lSDL2 \
+LIBS        := $(TOOLCHAIN)/usr/lib/libSDL2.a \
                -lc -lkernel -lc++ -lScePosix \
                -lSceVideoOut -lScePad -lSceUserService -lSceSystemService -lSceSysmodule \
                -lSceImeDialog -lSceCommonDialog -lSceMsgDialog -lSceFreeType -lSceAudioOut
 
 LDFLAGS     := -m elf_x86_64 -pie --script $(TOOLCHAIN)/link.x --eh-frame-hdr \
-               -L$(TOOLCHAIN)/lib $(LIBS) $(TOOLCHAIN)/lib/crt1.o
+               -L$(TOOLCHAIN)/usr/lib -L$(TOOLCHAIN)/lib $(LIBS) $(TOOLCHAIN)/lib/crt1.o
 
 APP_CPPFILES := $(wildcard src/*.cpp)
 IMGUI_CPPFILES := $(wildcard third_party/imgui/*.cpp)
