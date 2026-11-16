@@ -76,13 +76,15 @@ bool ps4_ime_init_system(void) {
     rc = sceCommonDialogInitialize();
     log_msg("IME", "sceCommonDialogInitialize() -> 0x%08x", rc);
 
-    OrbisUserServiceInitializeParams params;
-    memset(&params, 0, sizeof(params));
-    params.priority = 700;
-    int32_t us_rc = sceUserServiceInitialize(&params);
-    log_msg("IME", "sceUserServiceInitialize() -> 0x%08x", us_rc);
-
     int32_t uid_rc = sceUserServiceGetInitialUser(&g_user_id);
+    if (uid_rc < 0) {
+        OrbisUserServiceInitializeParams params;
+        memset(&params, 0, sizeof(params));
+        params.priority = 700;
+        int32_t us_rc = sceUserServiceInitialize(&params);
+        log_msg("IME", "sceUserServiceInitialize() -> 0x%08x", us_rc);
+        uid_rc = sceUserServiceGetInitialUser(&g_user_id);
+    }
     log_msg("IME", "sceUserServiceGetInitialUser() -> 0x%08x (userId=%d)", uid_rc, g_user_id);
     if (uid_rc < 0) {
         g_user_id = 0;

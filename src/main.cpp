@@ -9,6 +9,13 @@
 #include <orbis/SystemService.h>
 #include <stdio.h>
 
+static void sdl_log_bridge(void* userdata, int category, SDL_LogPriority priority, const char* message) {
+    (void)userdata;
+    (void)category;
+    (void)priority;
+    log_msg("SDL2", "%s", message ? message : "");
+}
+
 int main(int argc, char* argv[]) {
     (void)argc;
     (void)argv;
@@ -16,7 +23,7 @@ int main(int argc, char* argv[]) {
     log_init();
     log_msg("MAIN", "PCManFM-PS4 starting up...");
 
-    ps4_ime_init_system();
+    SDL_LogSetOutputFunction(sdl_log_bridge, NULL);
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER | SDL_INIT_TIMER) != 0) {
         log_msg("MAIN", "SDL_Init failed: %s", SDL_GetError());
@@ -25,6 +32,8 @@ int main(int argc, char* argv[]) {
         return -1;
     }
     log_msg("MAIN", "SDL_Init OK");
+
+    ps4_ime_init_system();
 
     SDL_Window* window = SDL_CreateWindow(
         "PCManFM-PS4",
