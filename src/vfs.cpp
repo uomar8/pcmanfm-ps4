@@ -8,7 +8,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-#include <sys/mount.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -273,16 +272,10 @@ bool vfs_scan_directory(const char* path,
 }
 
 bool vfs_get_disk_space(const char* path, uint64_t& out_total, uint64_t& out_free) {
-    struct statfs fs;
-    memset(&fs, 0, sizeof(fs));
-    if (statfs(path, &fs) != 0) {
-        out_total = 0;
-        out_free = 0;
-        return false;
-    }
-    out_total = (uint64_t)fs.f_blocks * (uint64_t)fs.f_bsize;
-    out_free = (uint64_t)fs.f_bavail * (uint64_t)fs.f_bsize;
-    return true;
+    (void)path;
+    out_total = 0;
+    out_free = 0;
+    return false;
 }
 
 bool vfs_mkdir(const char* path, std::string& out_error) {
@@ -631,6 +624,5 @@ void vfs_save_bookmarks(const std::vector<BookmarkItem>& bookmarks) {
         fprintf(fp, "%s|%s\n", bookmarks[i].label.c_str(), bookmarks[i].path.c_str());
     }
     fflush(fp);
-    fsync(fileno(fp));
     fclose(fp);
 }

@@ -14,13 +14,13 @@ CXX         := clang++
 LD          := ld.lld
 
 COMMON_FLAGS := --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables \
-                -O3 -march=btver2 -mtune=btver2 -c \
+                -O3 -march=btver2 -mtune=btver2 -D_BSD_SOURCE -D_POSIX_C_SOURCE=200809L -c \
                 -isysroot $(TOOLCHAIN) -isystem $(TOOLCHAIN)/include \
                 -I$(TOOLCHAIN)/usr/include -I$(TOOLCHAIN)/usr/include/SDL2 \
                 -Isrc -Ithird_party/imgui
 
 CFLAGS      := $(COMMON_FLAGS) -Werror=vla -Werror=alloca
-CXXFLAGS    := $(COMMON_FLAGS) -std=c++17 -D_LIBCPP_HAS_NO_THREADS -nostdinc++ -isystem $(TOOLCHAIN)/include/c++/v1
+CXXFLAGS    := $(COMMON_FLAGS) -std=c++17 -nostdinc++ -isystem $(TOOLCHAIN)/include/c++/v1
 
 LIBS        := -L$(TOOLCHAIN)/usr/lib -lSDL2 \
                -lc -lkernel -lc++ -lScePosix \
