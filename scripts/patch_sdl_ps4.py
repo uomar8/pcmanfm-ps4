@@ -12,6 +12,14 @@ new_ogl = "#if (SDL_VIDEO_OPENGL && __MACOSX__) || (__IPHONEOS__ && !TARGET_OS_M
 assert old_ogl in s, "SDL_video.c OGL guard not found"
 video_c.write_text(s.replace(old_ogl, new_ogl, 1))
 
+# 1b. CMakeLists.txt: disable SDL_VIDEO_RENDER_OGL_ES2 so Piglet GLES2 symbols are not linked
+cmake_txt = root / "CMakeLists.txt"
+cs = cmake_txt.read_text()
+old_gles2 = "    set(SDL_VIDEO_RENDER_OGL_ES2 1)"
+new_gles2 = "    # set(SDL_VIDEO_RENDER_OGL_ES2 1) # disabled for sceVideoOut software framebuffer"
+assert old_gles2 in cs, "CMakeLists.txt SDL_VIDEO_RENDER_OGL_ES2 not found"
+cmake_txt.write_text(cs.replace(old_gles2, new_gles2, 1))
+
 # 2. SDL_ps4video.c: add sceVideoOut software framebuffer + skip Piglet + preserve SDL_LogSetOutputFunction
 ps4_c = root / "src/video/ps4/SDL_ps4video.c"
 s = ps4_c.read_text()
