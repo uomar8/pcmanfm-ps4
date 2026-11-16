@@ -104,6 +104,9 @@ private:
     std::string m_tree_root;
     bool m_exit_requested;
     bool m_scroll_to_cursor;
+    bool m_ui_nav_mode;
+    bool m_l2_down;
+    bool m_r2_down;
 
     // Helpers
     void load_config(void);
