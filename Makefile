@@ -26,7 +26,8 @@ CXXFLAGS    := $(COMMON_FLAGS) -std=c++17 -nostdinc++ -isystem $(TOOLCHAIN)/incl
 LIBS        := $(TOOLCHAIN)/usr/lib/libSDL2.a \
                -lc -lkernel -lc++ -lScePosix \
                -lSceVideoOut -lScePad -lSceUserService -lSceSystemService -lSceSysmodule \
-               -lSceImeDialog -lSceCommonDialog -lSceMsgDialog -lSceFreeType -lSceAudioOut
+               -lSceImeDialog -lSceCommonDialog -lSceMsgDialog -lSceFreeType -lSceAudioOut \
+               -lScePigletv2VSH -lScePrecompiledShaders -lSceShellCoreUtil -lSceRtc
 
 LDFLAGS     := -m elf_x86_64 -pie --script $(TOOLCHAIN)/link.x --eh-frame-hdr \
                -L$(TOOLCHAIN)/usr/lib -L$(TOOLCHAIN)/lib $(LIBS) $(TOOLCHAIN)/lib/crt1.o
