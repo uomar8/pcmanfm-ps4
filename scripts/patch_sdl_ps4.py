@@ -12,13 +12,18 @@ new_ogl = "#if (SDL_VIDEO_OPENGL && __MACOSX__) || (__IPHONEOS__ && !TARGET_OS_M
 assert old_ogl in s, "SDL_video.c OGL guard not found"
 video_c.write_text(s.replace(old_ogl, new_ogl, 1))
 
-# 1b. CMakeLists.txt: disable SDL_VIDEO_RENDER_OGL_ES2 so Piglet GLES2 symbols are not linked
+# 1b. CMakeLists.txt: disable SDL_VIDEO_RENDER_OGL_ES2 & EGL so Piglet symbols are not linked
 cmake_txt = root / "CMakeLists.txt"
 cs = cmake_txt.read_text()
-old_gles2 = "    set(SDL_VIDEO_RENDER_OGL_ES2 1)"
-new_gles2 = "    # set(SDL_VIDEO_RENDER_OGL_ES2 1) # disabled for sceVideoOut software framebuffer"
-assert old_gles2 in cs, "CMakeLists.txt SDL_VIDEO_RENDER_OGL_ES2 not found"
-cmake_txt.write_text(cs.replace(old_gles2, new_gles2, 1))
+for line in [
+    "    set(SDL_VIDEO_OPENGL_EGL 1)",
+    "    set(SDL_VIDEO_OPENGL_ES2 1)",
+    "    set(SDL_VIDEO_RENDER_OGL_ES2 1)",
+    "    set(HAVE_OPENGLES TRUE)",
+]:
+    assert line in cs, f"CMakeLists.txt missing: {line}"
+    cs = cs.replace(line, "    # " + line.strip(), 1)
+cmake_txt.write_text(cs)
 
 for rel in [
     "src/render/SDL_render.c",
@@ -29,6 +34,9 @@ for rel in [
     txt = fp.read_text()
     txt = txt.replace("#if SDL_VIDEO_RENDER_OGL_ES2", "#if 0 /* SDL_VIDEO_RENDER_OGL_ES2 */")
     fp.write_text(txt)
+
+gles_c = root / "src/video/ps4/SDL_ps4opengles.c"
+gles_c.write_text(gles_c.read_text().replace("#if SDL_VIDEO_DRIVER_PS4", "#if 0 /* disabled */", 1))
 
 # 2. SDL_ps4video.c: add sceVideoOut software framebuffer + skip Piglet + preserve SDL_LogSetOutputFunction
 ps4_c = root / "src/video/ps4/SDL_ps4video.c"
@@ -211,6 +219,26 @@ new_destroy = """    device->DestroyWindow = PS4_DestroyWindow;
 assert old_destroy in s, "DestroyWindow assignment not found"
 s = s.replace(old_destroy, new_destroy, 1)
 
+# Remove GL_* function pointers and SDL_EGL_* calls
+old_gl = """    device->GL_LoadLibrary = PS4_GLES_LoadLibrary;
+    device->GL_GetProcAddress = PS4_GLES_GetProcAddress;
+    device->GL_UnloadLibrary = PS4_GLES_UnloadLibrary;
+    device->GL_CreateContext = PS4_GLES_CreateContext;
+    device->GL_MakeCurrent = PS4_GLES_MakeCurrent;
+    device->GL_SetSwapInterval = PS4_GLES_SetSwapInterval;
+    device->GL_GetSwapInterval = PS4_GLES_GetSwapInterval;
+    device->GL_SwapWindow = PS4_GLES_SwapWindow;
+    device->GL_DeleteContext = PS4_GLES_DeleteContext;
+    device->GL_DefaultProfileConfig = PS4_GLES_DefaultProfileConfig;"""
+assert old_gl in s, "GL_* block not found"
+s = s.replace(old_gl, "    /* GL_* disabled for sceVideoOut software framebuffer */", 1)
+
+s = s.replace("SDL_EGL_MakeCurrent(_this, NULL, NULL);", "/* egl disabled */")
+s = s.replace("SDL_EGL_DestroySurface(_this, data->egl_surface);", "/* egl disabled */")
+s = s.replace("data->egl_surface = SDL_EGL_CreateSurface(_this, &ps4_egl_window);", "/* egl disabled */")
+s = s.replace("SDL_EGL_MakeCurrent(_this, data->egl_surface, ctx);", "/* egl disabled */")
+s = s.replace("PS4_PigletExit();", "/* piglet disabled */")
+
 # Make EGL optional in PS4_CreateWindow
 old_cw = """    if (!_this->egl_data) {
         return SDL_SetError("egl not initialized");
@@ -232,20 +260,6 @@ old_cw = """    if (!_this->egl_data) {
 new_cw = """    window_data = (SDL_WindowData *) SDL_calloc(1, sizeof(SDL_WindowData));
     if (window_data == NULL) {
         return SDL_OutOfMemory();
-    }
-
-    if (window->flags & SDL_WINDOW_OPENGL) {
-        if (!_this->egl_data) {
-            SDL_free(window_data);
-            return SDL_SetError("egl not initialized");
-        }
-        ps4_egl_window.uWidth = window->w;
-        ps4_egl_window.uHeight = window->h;
-        window_data->egl_surface = SDL_EGL_CreateSurface(_this, &ps4_egl_window);
-        if (window_data->egl_surface == EGL_NO_SURFACE) {
-            SDL_free(window_data);
-            return SDL_SetError("could not create egl window surface");
-        }
     }"""
 assert old_cw in s, "PS4_CreateWindow EGL block not found"
 s = s.replace(old_cw, new_cw, 1)

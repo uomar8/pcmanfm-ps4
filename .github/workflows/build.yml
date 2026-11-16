@@ -31,7 +31,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: /home/runner/OpenOrbis-PS4-Toolchain
-          key: openorbis-v0.5.4-sdl2-ps4-v7
+          key: openorbis-v0.5.4-sdl2-ps4-v8
 
       - name: Download & Extract OpenOrbis v0.5.4
         if: steps.cache-oo.outputs.cache-hit != 'true'
