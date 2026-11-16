@@ -32,6 +32,7 @@ int main(int argc, char* argv[]) {
         return -1;
     }
     log_msg("MAIN", "SDL_Init OK");
+    SDL_LogSetOutputFunction(sdl_log_bridge, NULL);
 
     ps4_ime_init_system();
 
