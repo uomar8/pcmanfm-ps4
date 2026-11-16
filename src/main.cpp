@@ -34,8 +34,6 @@ int main(int argc, char* argv[]) {
     log_msg("MAIN", "SDL_Init OK");
     SDL_LogSetOutputFunction(sdl_log_bridge, NULL);
 
-    ps4_ime_init_system();
-
     SDL_Window* window = SDL_CreateWindow(
         "PCManFM-PS4",
         SDL_WINDOWPOS_CENTERED,

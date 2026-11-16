@@ -272,14 +272,8 @@ void PcmanfmApp::start_ime(ImePurpose purpose, const char* title, const char* in
     m_ime_target_path = target_path ? target_path : "";
     snprintf(m_ime_title, sizeof(m_ime_title), "%s", title ? title : "Input");
     snprintf(m_ime_buf, sizeof(m_ime_buf), "%s", initial_text ? initial_text : "");
-
-    if (ps4_ime_open(m_ime_title, m_ime_buf, sizeof(m_ime_buf) - 1)) {
-        m_ime_using_ps4 = true;
-        m_ime_fallback_open = false;
-    } else {
-        m_ime_using_ps4 = false;
-        m_ime_fallback_open = true;
-    }
+    m_ime_using_ps4 = false;
+    m_ime_fallback_open = true;
 }
 
 void PcmanfmApp::finish_ime(const char* text) {
@@ -1205,12 +1199,45 @@ void PcmanfmApp::draw_modals(void) {
     if (m_ime_fallback_open) ImGui::OpenPopup("Text Input");
     if (ImGui::BeginPopupModal("Text Input", &m_ime_fallback_open, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("%s", m_ime_title);
+        ImGui::SetNextItemWidth(680.0f);
         ImGui::InputText("##ime_fb", m_ime_buf, sizeof(m_ime_buf));
-        if (ImGui::Button("OK", ImVec2(120, 0))) {
+
+        static const char* rows[] = {
+            "1234567890/-_.",
+            "qwertyuiop",
+            "asdfghjkl",
+            "zxcvbnm "
+        };
+        for (int r = 0; r < 4; ++r) {
+            const char* row = rows[r];
+            for (int c = 0; row[c]; ++c) {
+                if (c > 0) ImGui::SameLine();
+                char klabel[16];
+                if (row[c] == ' ') snprintf(klabel, sizeof(klabel), "Space##osk_%d_%d", r, c);
+                else snprintf(klabel, sizeof(klabel), "%c##osk_%d_%d", row[c], r, c);
+                if (ImGui::Button(klabel, ImVec2(row[c] == ' ' ? 90.0f : 42.0f, 38.0f))) {
+                    size_t len = strlen(m_ime_buf);
+                    if (len + 1 < sizeof(m_ime_buf)) {
+                        m_ime_buf[len] = row[c];
+                        m_ime_buf[len + 1] = '\0';
+                    }
+                }
+            }
+        }
+        if (ImGui::Button("Backspace", ImVec2(140, 38))) {
+            size_t len = strlen(m_ime_buf);
+            if (len > 0) m_ime_buf[len - 1] = '\0';
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Clear", ImVec2(100, 38))) {
+            m_ime_buf[0] = '\0';
+        }
+        ImGui::Separator();
+        if (ImGui::Button("OK", ImVec2(140, 0))) {
             finish_ime(m_ime_buf);
         }
         ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+        if (ImGui::Button("Cancel", ImVec2(140, 0))) {
             finish_ime(NULL);
         }
         ImGui::EndPopup();
