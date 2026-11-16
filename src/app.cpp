@@ -401,11 +401,6 @@ void PcmanfmApp::do_delete_confirmed(void) {
     }
 }
 
-void PcmanfmApp::handle_sdl_event(const SDL_Event& ev) {
-    if (ev.type == SDL_QUIT) {
-        m_exit_requested = true;
-        return;
-    }
 int PcmanfmApp::get_sidebar_count(void) const {
     return 7 + (int)m_bookmarks.size();
 }
