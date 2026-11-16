@@ -82,6 +82,8 @@ PcmanfmApp::PcmanfmApp()
       m_actions_cursor(0),
       m_delete_confirm_idx(0),
       m_prefs_cursor(0),
+      m_ime_row(1),
+      m_ime_col(0),
       m_l2_down(false),
       m_r2_down(false) {
     memset(&m_op_prog, 0, sizeof(m_op_prog));
@@ -283,6 +285,8 @@ void PcmanfmApp::start_ime(ImePurpose purpose, const char* title, const char* in
     snprintf(m_ime_buf, sizeof(m_ime_buf), "%s", initial_text ? initial_text : "");
     m_ime_using_ps4 = false;
     m_ime_fallback_open = true;
+    m_ime_row = 1;
+    m_ime_col = 0;
 }
 
 void PcmanfmApp::finish_ime(const char* text) {
@@ -766,6 +770,65 @@ void PcmanfmApp::handle_sdl_event(const SDL_Event& ev) {
                 } else if (m_prefs_cursor == 5) {
                     save_config();
                     m_show_prefs = false;
+                }
+            }
+            return;
+        }
+        if (m_ime_fallback_open) {
+            static const char* osk_rows[] = {
+                "1234567890/-_.",
+                "qwertyuiop",
+                "asdfghjkl",
+                "zxcvbnm "
+            };
+            auto row_len = [&](int r) -> int {
+                if (r >= 0 && r < 4) return (int)strlen(osk_rows[r]);
+                return 2; // row 4: Backspace/Clear, row 5: OK/Cancel
+            };
+            int cur_len = row_len(m_ime_row);
+            if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_UP) {
+                m_ime_row = (m_ime_row > 0) ? (m_ime_row - 1) : 5;
+                int nl = row_len(m_ime_row);
+                if (m_ime_col >= nl) m_ime_col = nl - 1;
+            } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN) {
+                m_ime_row = (m_ime_row + 1) % 6;
+                int nl = row_len(m_ime_row);
+                if (m_ime_col >= nl) m_ime_col = nl - 1;
+            } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT) {
+                m_ime_col = (m_ime_col > 0) ? (m_ime_col - 1) : (cur_len - 1);
+            } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT) {
+                m_ime_col = (m_ime_col + 1) % cur_len;
+            } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_X) { // Square -> Backspace
+                size_t len = strlen(m_ime_buf);
+                if (len > 0) m_ime_buf[len - 1] = '\0';
+            } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_Y) { // Triangle -> Space
+                size_t len = strlen(m_ime_buf);
+                if (len + 1 < sizeof(m_ime_buf)) {
+                    m_ime_buf[len] = ' ';
+                    m_ime_buf[len + 1] = '\0';
+                }
+            } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_START) { // Options -> OK
+                finish_ime(m_ime_buf);
+            } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_A) { // Cross -> Press key
+                if (m_ime_row >= 0 && m_ime_row < 4) {
+                    const char* rstr = osk_rows[m_ime_row];
+                    if (m_ime_col >= 0 && m_ime_col < (int)strlen(rstr)) {
+                        size_t len = strlen(m_ime_buf);
+                        if (len + 1 < sizeof(m_ime_buf)) {
+                            m_ime_buf[len] = rstr[m_ime_col];
+                            m_ime_buf[len + 1] = '\0';
+                        }
+                    }
+                } else if (m_ime_row == 4) {
+                    if (m_ime_col == 0) {
+                        size_t len = strlen(m_ime_buf);
+                        if (len > 0) m_ime_buf[len - 1] = '\0';
+                    } else {
+                        m_ime_buf[0] = '\0';
+                    }
+                } else if (m_ime_row == 5) {
+                    if (m_ime_col == 0) finish_ime(m_ime_buf);
+                    else finish_ime(NULL);
                 }
             }
             return;
@@ -1828,7 +1891,7 @@ void PcmanfmApp::draw_modals(void) {
         if (!m_show_help) {
             ImGui::CloseCurrentPopup();
         } else {
-            ImGui::Text("PCManFM-PS4 v01.15 (Orbis OS File Manager)");
+            ImGui::Text("PCManFM-PS4 v01.16 (Orbis OS File Manager)");
             ImGui::Separator();
             ImGui::Text("D-Pad Up/Down      : Move selection");
             ImGui::Text("D-Pad Left/Right   : Parent/Enter (or Switch Pane)");
@@ -1849,13 +1912,28 @@ void PcmanfmApp::draw_modals(void) {
     }
 
     if (m_ime_fallback_open && !ImGui::IsPopupOpen("Text Input")) ImGui::OpenPopup("Text Input");
-    if (ImGui::BeginPopupModal("Text Input", &m_ime_fallback_open, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (ImGui::BeginPopupModal("Text Input", NULL, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoNav)) {
         if (!m_ime_fallback_open) {
             ImGui::CloseCurrentPopup();
         } else {
-            ImGui::Text("%s", m_ime_title);
-            ImGui::SetNextItemWidth(680.0f);
-            ImGui::InputText("##ime_fb", m_ime_buf, sizeof(m_ime_buf));
+            auto push_key_hl = [](bool hl) {
+                if (hl) {
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.95f, 0.72f, 0.12f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.05f, 0.05f, 0.05f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 3.0f);
+                }
+            };
+            auto pop_key_hl = [](bool hl) {
+                if (hl) {
+                    ImGui::PopStyleVar();
+                    ImGui::PopStyleColor(3);
+                }
+            };
+
+            ImGui::TextColored(ImVec4(0.95f, 0.72f, 0.12f, 1.0f), "%s", m_ime_title);
+            ImGui::SetNextItemWidth(700.0f);
+            ImGui::InputText("##ime_fb", m_ime_buf, sizeof(m_ime_buf), ImGuiInputTextFlags_ReadOnly);
 
             static const char* rows[] = {
                 "1234567890/-_.",
@@ -1870,32 +1948,54 @@ void PcmanfmApp::draw_modals(void) {
                     char klabel[16];
                     if (row[c] == ' ') snprintf(klabel, sizeof(klabel), "Space##osk_%d_%d", r, c);
                     else snprintf(klabel, sizeof(klabel), "%c##osk_%d_%d", row[c], r, c);
-                    if (ImGui::Button(klabel, ImVec2(row[c] == ' ' ? 90.0f : 42.0f, 38.0f))) {
+                    bool hl = (m_ime_row == r && m_ime_col == c);
+                    push_key_hl(hl);
+                    if (ImGui::Button(klabel, ImVec2(row[c] == ' ' ? 100.0f : 44.0f, 40.0f))) {
+                        m_ime_row = r;
+                        m_ime_col = c;
                         size_t len = strlen(m_ime_buf);
                         if (len + 1 < sizeof(m_ime_buf)) {
                             m_ime_buf[len] = row[c];
                             m_ime_buf[len + 1] = '\0';
                         }
                     }
+                    pop_key_hl(hl);
                 }
             }
-            if (ImGui::Button("Backspace", ImVec2(140, 38))) {
+
+            bool hl_bs = (m_ime_row == 4 && m_ime_col == 0);
+            push_key_hl(hl_bs);
+            if (ImGui::Button("Backspace (Square)", ImVec2(200, 40))) {
                 size_t len = strlen(m_ime_buf);
                 if (len > 0) m_ime_buf[len - 1] = '\0';
             }
+            pop_key_hl(hl_bs);
+
             ImGui::SameLine();
-            if (ImGui::Button("Clear", ImVec2(100, 38))) {
+            bool hl_clr = (m_ime_row == 4 && m_ime_col == 1);
+            push_key_hl(hl_clr);
+            if (ImGui::Button("Clear", ImVec2(120, 40))) {
                 m_ime_buf[0] = '\0';
             }
+            pop_key_hl(hl_clr);
+
             ImGui::Separator();
-            if (ImGui::Button("OK", ImVec2(140, 0))) {
+            bool hl_ok = (m_ime_row == 5 && m_ime_col == 0);
+            push_key_hl(hl_ok);
+            if (ImGui::Button("OK (Options)", ImVec2(180, 0))) {
                 finish_ime(m_ime_buf);
             }
-            ImGui::SetItemDefaultFocus();
+            pop_key_hl(hl_ok);
+
             ImGui::SameLine();
-            if (ImGui::Button("Cancel (Circle)", ImVec2(160, 0))) {
+            bool hl_cancel = (m_ime_row == 5 && m_ime_col == 1);
+            push_key_hl(hl_cancel);
+            if (ImGui::Button("Cancel (Circle)", ImVec2(180, 0))) {
                 finish_ime(NULL);
             }
+            pop_key_hl(hl_cancel);
+
+            ImGui::TextDisabled("D-Pad: Move | Cross: Key | Square: Backspace | Triangle: Space | Options: OK");
         }
         ImGui::EndPopup();
     }

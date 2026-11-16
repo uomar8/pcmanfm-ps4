@@ -119,6 +119,8 @@ private:
     int m_actions_cursor;
     int m_delete_confirm_idx;
     int m_prefs_cursor;
+    int m_ime_row;
+    int m_ime_col;
     bool m_l2_down;
     bool m_r2_down;
 
