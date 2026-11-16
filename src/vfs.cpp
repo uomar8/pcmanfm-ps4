@@ -215,14 +215,27 @@ bool vfs_scan_directory(const char* path,
 
         vfs_join_path(path, ent->d_name, full_buf, 2048);
 
+        OrbisKernelStat kst;
+        memset(&kst, 0, sizeof(kst));
+        bool have_kstat = (sceKernelStat(full_buf, &kst) == 0);
+
         struct stat st;
         memset(&st, 0, sizeof(st));
-        bool have_stat = (lstat(full_buf, &st) == 0);
+        bool have_stat = have_kstat ? false : (lstat(full_buf, &st) == 0);
 
         bool is_symlink = false;
         bool is_dir = false;
+        uint64_t entry_size = 0ULL;
+        uint32_t entry_mode = 0;
+        int64_t entry_mtime = 0;
 
-        if (have_stat) {
+        if (have_kstat) {
+            is_symlink = S_ISLNK(kst.st_mode);
+            is_dir = S_ISDIR(kst.st_mode);
+            entry_size = (uint64_t)kst.st_size;
+            entry_mode = (uint32_t)(kst.st_mode & 07777);
+            entry_mtime = (int64_t)kst.st_mtim.tv_sec;
+        } else if (have_stat) {
             is_symlink = S_ISLNK(st.st_mode);
             is_dir = S_ISDIR(st.st_mode);
             if (is_symlink) {
@@ -231,8 +244,11 @@ bool vfs_scan_directory(const char* path,
                     is_dir = true;
                 }
             }
+            entry_size = (uint64_t)st.st_size;
+            entry_mode = (uint32_t)(st.st_mode & 07777);
+            entry_mtime = (int64_t)st.st_mtime;
         } else {
-            // Handle DT_UNKNOWN and fallback types cleanly
+            // Handle DT_UNKNOWN and fallback types cleanly when stat/lstat return ENOSYS
             if (ent->d_type == DT_DIR) {
                 is_dir = true;
             } else if (ent->d_type == DT_LNK) {
@@ -244,14 +260,22 @@ bool vfs_scan_directory(const char* path,
                     closedir(probe);
                 }
             }
+            if (!is_dir && !is_symlink) {
+                int fd = open(full_buf, O_RDONLY);
+                if (fd >= 0) {
+                    off_t sz = lseek(fd, 0, SEEK_END);
+                    if (sz > 0) entry_size = (uint64_t)sz;
+                    close(fd);
+                }
+            }
         }
 
         DirEntry item;
         item.name = ent->d_name;
         item.full_path = full_buf;
-        item.size = have_stat ? (uint64_t)st.st_size : 0ULL;
-        item.mode = have_stat ? (uint32_t)(st.st_mode & 07777) : 0;
-        item.mtime = have_stat ? (int64_t)st.st_mtime : 0;
+        item.size = entry_size;
+        item.mode = entry_mode;
+        item.mtime = entry_mtime;
         item.is_dir = is_dir;
         item.is_symlink = is_symlink;
         item.is_hidden = is_hidden;
@@ -280,7 +304,7 @@ bool vfs_get_disk_space(const char* path, uint64_t& out_total, uint64_t& out_fre
 }
 
 bool vfs_mkdir(const char* path, std::string& out_error) {
-    if (mkdir(path, 0777) == 0) {
+    if (mkdir(path, 0777) == 0 || sceKernelMkdir(path, 0777) == 0) {
         log_msg("VFS", "mkdir(\"%s\") OK", path);
         return true;
     }
@@ -292,7 +316,7 @@ bool vfs_mkdir(const char* path, std::string& out_error) {
 }
 
 bool vfs_rename(const char* old_path, const char* new_path, std::string& out_error) {
-    if (rename(old_path, new_path) == 0) {
+    if (rename(old_path, new_path) == 0 || sceKernelRename(old_path, new_path) == 0) {
         log_msg("VFS", "rename(\"%s\" -> \"%s\") OK", old_path, new_path);
         return true;
     }
@@ -304,7 +328,7 @@ bool vfs_rename(const char* old_path, const char* new_path, std::string& out_err
 }
 
 bool vfs_chmod(const char* path, uint32_t mode, std::string& out_error) {
-    if (chmod(path, (mode_t)mode) == 0) {
+    if (chmod(path, (mode_t)mode) == 0 || sceKernelChmod(path, (OrbisKernelMode)mode) == 0) {
         log_msg("VFS", "chmod(\"%s\", 0%o) OK", path, mode);
         return true;
     }
@@ -397,6 +421,13 @@ static bool copy_single_file(const char* src, const char* dst, FileOpProgress* p
 }
 
 static bool vfs_probe_is_dir(const char* path, bool& out_is_dir, FileOpProgress* prog) {
+    OrbisKernelStat kst;
+    memset(&kst, 0, sizeof(kst));
+    int32_t krc = sceKernelStat(path, &kst);
+    if (krc == 0) {
+        out_is_dir = S_ISDIR(kst.st_mode);
+        return true;
+    }
     struct stat st;
     if (lstat(path, &st) == 0) {
         out_is_dir = S_ISDIR(st.st_mode);
@@ -408,11 +439,14 @@ static bool vfs_probe_is_dir(const char* path, bool& out_is_dir, FileOpProgress*
         out_is_dir = true;
         return true;
     }
-    if (access(path, F_OK) == 0) {
+    int fd = open(path, O_RDONLY);
+    if (fd >= 0) {
+        close(fd);
         out_is_dir = false;
         return true;
     }
-    snprintf(prog->error_msg, sizeof(prog->error_msg), "Cannot access: %s (%s)", path, strerror(errno));
+    snprintf(prog->error_msg, sizeof(prog->error_msg),
+             "Cannot probe: %s (kstat=0x%08x, %s)", path, (uint32_t)krc, strerror(errno));
     return false;
 }
 
@@ -427,7 +461,9 @@ static bool copy_recursive(const char* src, const char* dst, FileOpProgress* pro
     }
 
     if (is_dir) {
-        mkdir(dst, 0777);
+        if (mkdir(dst, 0777) != 0) {
+            sceKernelMkdir(dst, 0777);
+        }
         DIR* dir = opendir(src);
         if (!dir) {
             snprintf(prog->error_msg, sizeof(prog->error_msg), "opendir failed: %s (%s)", src, strerror(errno));
@@ -487,16 +523,24 @@ static bool delete_recursive(const char* target, FileOpProgress* prog) {
         delete[] child;
         closedir(dir);
         if (ok && rmdir(target) != 0) {
-            snprintf(prog->error_msg, sizeof(prog->error_msg), "rmdir failed: %s (%s)", target, strerror(errno));
-            ok = false;
+            int32_t krc = sceKernelRmdir(target);
+            if (krc != 0) {
+                snprintf(prog->error_msg, sizeof(prog->error_msg),
+                         "rmdir failed: %s (krc=0x%08x, %s)", target, (uint32_t)krc, strerror(errno));
+                ok = false;
+            }
         }
         __atomic_add_fetch(&prog->items_done, 1ULL, __ATOMIC_RELAXED);
         return ok;
     }
 
     if (unlink(target) != 0) {
-        snprintf(prog->error_msg, sizeof(prog->error_msg), "unlink failed: %s (%s)", target, strerror(errno));
-        return false;
+        int32_t krc = sceKernelUnlink(target);
+        if (krc != 0) {
+            snprintf(prog->error_msg, sizeof(prog->error_msg),
+                     "unlink failed: %s (krc=0x%08x, %s)", target, (uint32_t)krc, strerror(errno));
+            return false;
+        }
     }
     __atomic_add_fetch(&prog->items_done, 1ULL, __ATOMIC_RELAXED);
     return true;
