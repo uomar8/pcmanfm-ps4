@@ -31,7 +31,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: /home/runner/OpenOrbis-PS4-Toolchain
-          key: openorbis-v0.5.4-sdl2-ps4-v3
+          key: openorbis-v0.5.4-sdl2-ps4-v4
 
       - name: Download & Extract OpenOrbis v0.5.4
         if: steps.cache-oo.outputs.cache-hit != 'true'
@@ -47,14 +47,7 @@ jobs:
         if: steps.cache-oo.outputs.cache-hit != 'true'
         run: |
           git clone --depth 1 --branch ps4 https://github.com/bucanero/SDL-PS4.git /tmp/SDL-PS4
-          python3 -c '
-          p = "/tmp/SDL-PS4/src/video/ps4/SDL_ps4piglet.c"
-          s = open(p).read()
-          old = "    ps4_pgl_config.flags = 0;"
-          new = "    ps4_pgl_config.flags = ORBIS_PGL_FLAGS_USE_COMPOSITE_EXT | ORBIS_PGL_FLAGS_USE_FLEXIBLE_MEMORY | 0x60;\n    ps4_pgl_config.processOrder = 1;\n    ps4_pgl_config.maxMappedFlexibleMemory = 170 * 1024 * 1024;"
-          assert old in s, "flags line not found"
-          open(p, "w").write(s.replace(old, new, 1))
-          '
+          python3 scripts/patch_sdl_ps4.py /tmp/SDL-PS4
           cmake -S /tmp/SDL-PS4 -B /tmp/SDL-PS4/build -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE=/tmp/SDL-PS4/cmake/openorbis.cmake \
             -DCMAKE_BUILD_TYPE=Release \

@@ -40,7 +40,7 @@ int main(int argc, char* argv[]) {
         SDL_WINDOWPOS_CENTERED,
         1920,
         1080,
-        SDL_WINDOW_FULLSCREEN | SDL_WINDOW_SHOWN
+        SDL_WINDOW_SHOWN
     );
     if (!window) {
         log_msg("MAIN", "SDL_CreateWindow failed: %s", SDL_GetError());
@@ -51,15 +51,20 @@ int main(int argc, char* argv[]) {
     }
     log_msg("MAIN", "SDL_CreateWindow(1920x1080) OK");
 
-    SDL_Renderer* renderer = SDL_CreateRenderer(
-        window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC
-    );
-    if (!renderer) {
-        log_msg("MAIN", "Accelerated renderer failed (%s), trying software renderer", SDL_GetError());
-        renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
+    SDL_Surface* window_surface = SDL_GetWindowSurface(window);
+    if (!window_surface) {
+        log_msg("MAIN", "SDL_GetWindowSurface failed: %s", SDL_GetError());
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        log_close();
+        sceSystemServiceLoadExec("exit", NULL);
+        return -1;
     }
+    log_msg("MAIN", "SDL_GetWindowSurface OK (%dx%d)", window_surface->w, window_surface->h);
+
+    SDL_Renderer* renderer = SDL_CreateSoftwareRenderer(window_surface);
     if (!renderer) {
-        log_msg("MAIN", "SDL_CreateRenderer failed: %s", SDL_GetError());
+        log_msg("MAIN", "SDL_CreateSoftwareRenderer failed: %s", SDL_GetError());
         SDL_DestroyWindow(window);
         SDL_Quit();
         log_close();
@@ -68,11 +73,11 @@ int main(int argc, char* argv[]) {
     }
     SDL_RendererInfo rinfo;
     if (SDL_GetRendererInfo(renderer, &rinfo) == 0) {
-        log_msg("MAIN", "SDL_CreateRenderer OK (driver=%s, renderer=%s)",
+        log_msg("MAIN", "SDL_CreateSoftwareRenderer OK (driver=%s, renderer=%s)",
                 SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "unknown",
                 rinfo.name ? rinfo.name : "unknown");
     } else {
-        log_msg("MAIN", "SDL_CreateRenderer OK");
+        log_msg("MAIN", "SDL_CreateSoftwareRenderer OK");
     }
 
     // Hide PS4 splash screen now that video output is ready
@@ -130,7 +135,7 @@ int main(int argc, char* argv[]) {
         SDL_SetRenderDrawColor(renderer, 20, 22, 28, 255);
         SDL_RenderClear(renderer);
         ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer);
-        SDL_RenderPresent(renderer);
+        SDL_UpdateWindowSurface(window);
     }
 
     log_msg("MAIN", "Exiting main loop cleanly");

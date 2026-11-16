@@ -1,10 +1,9 @@
 # PCManFM-PS4 OpenOrbis Makefile
 TITLE       := PCManFM-PS4
-APP_VER     := 01.06
+APP_VER     := 01.07
 TITLE_ID    := PCMF00100
 CONTENT_ID  := IV0000-PCMF00100_00-PCMANFMPS4000000
 PKG_NAME    := PCManFM-PS4-v$(APP_VER).pkg
-AUTHINFO    := "000000000000000000000000001C004000FF000000000080000000000000000000000000000000000000008000400040000000000000008000000000000000080040FFFF000000F000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
 
 TOOLCHAIN   := $(OO_PS4_TOOLCHAIN)
 CDIR        := linux
@@ -27,8 +26,7 @@ CXXFLAGS    := $(COMMON_FLAGS) -std=c++17 -nostdinc++ -isystem $(TOOLCHAIN)/incl
 LIBS        := $(TOOLCHAIN)/usr/lib/libSDL2.a \
                -lc -lkernel -lc++ -lScePosix \
                -lSceVideoOut -lScePad -lSceUserService -lSceSystemService -lSceSysmodule \
-               -lSceImeDialog -lSceCommonDialog -lSceMsgDialog -lSceFreeType -lSceAudioOut \
-               -lScePigletv2VSH -lScePrecompiledShaders -lSceShellCoreUtil -lSceRtc
+               -lSceImeDialog -lSceCommonDialog -lSceMsgDialog -lSceFreeType -lSceAudioOut
 
 LDFLAGS     := -m elf_x86_64 -pie --script $(TOOLCHAIN)/link.x --eh-frame-hdr \
                -L$(TOOLCHAIN)/usr/lib -L$(TOOLCHAIN)/lib $(LIBS) $(TOOLCHAIN)/lib/crt1.o
@@ -71,7 +69,7 @@ sce_sys/param.sfo: Makefile
 
 eboot.bin: $(OBJS)
 	$(LD) $(OBJS) -o $(BUILD_DIR)/app.elf $(LDFLAGS)
-	$(TOOLCHAIN)/bin/$(CDIR)/create-fself -in=$(BUILD_DIR)/app.elf -out=$(BUILD_DIR)/app.oelf --eboot "eboot.bin" --paid 0x3800000000000035 --authinfo $(AUTHINFO)
+	$(TOOLCHAIN)/bin/$(CDIR)/create-fself -in=$(BUILD_DIR)/app.elf -out=$(BUILD_DIR)/app.oelf --eboot "eboot.bin" --paid 0x3800000000000011
 
 $(BUILD_DIR)/src_%.o: src/%.cpp
 	$(CXX) $(CXXFLAGS) -Werror=vla -Werror=alloca -o $@ $<
