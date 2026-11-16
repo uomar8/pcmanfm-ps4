@@ -459,15 +459,29 @@ void PcmanfmApp::handle_sdl_event(const SDL_Event& ev) {
                 }
                 break;
             case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
-                if (m_cfg.dual_pane && m_active_pane != 0) {
-                    m_active_pane = 0;
-                    log_msg("UI", "Switched active pane -> 0");
+                if (m_cfg.dual_pane) {
+                    if (m_active_pane != 0) {
+                        m_active_pane = 0;
+                        log_msg("UI", "Switched active pane -> 0");
+                    }
+                } else {
+                    char* parent = new char[2048];
+                    vfs_parent_path(tab.path.c_str(), parent, 2048);
+                    if (tab.path != parent) {
+                        navigate_to(tab, parent, true);
+                    }
+                    delete[] parent;
                 }
                 break;
             case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
-                if (m_cfg.dual_pane && m_active_pane != 1) {
-                    m_active_pane = 1;
-                    log_msg("UI", "Switched active pane -> 1");
+                if (m_cfg.dual_pane) {
+                    if (m_active_pane != 1) {
+                        m_active_pane = 1;
+                        log_msg("UI", "Switched active pane -> 1");
+                    }
+                } else if (tab.cursor_idx >= 0 && tab.cursor_idx < (int)tab.entries.size() &&
+                           tab.entries[tab.cursor_idx].is_dir) {
+                    open_entry(tab, tab.cursor_idx);
                 }
                 break;
             case SDL_CONTROLLER_BUTTON_A: // Cross
@@ -482,17 +496,29 @@ void PcmanfmApp::handle_sdl_event(const SDL_Event& ev) {
                 m_show_actions_menu = true;
                 log_msg("UI", "ActionsMenu opened by Triangle (Y)");
                 break;
-            case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: { // L1 -> Prev tab
+            case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: { // L1 -> Prev tab (or Left pane)
                 PaneState& p = m_panes[m_active_pane];
                 if (p.tabs.size() > 1) {
                     p.active_tab = (p.active_tab - 1 + (int)p.tabs.size()) % (int)p.tabs.size();
+                    log_msg("UI", "L1 -> active_tab=%d", p.active_tab);
+                } else if (m_cfg.dual_pane) {
+                    m_active_pane = 0;
+                    log_msg("UI", "L1 -> active_pane=0");
+                } else {
+                    set_toast("Only 1 tab open (Actions -> New Tab)");
                 }
                 break;
             }
-            case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: { // R1 -> Next tab
+            case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: { // R1 -> Next tab (or Right pane)
                 PaneState& p = m_panes[m_active_pane];
                 if (p.tabs.size() > 1) {
                     p.active_tab = (p.active_tab + 1) % (int)p.tabs.size();
+                    log_msg("UI", "R1 -> active_tab=%d", p.active_tab);
+                } else if (m_cfg.dual_pane) {
+                    m_active_pane = 1;
+                    log_msg("UI", "R1 -> active_pane=1");
+                } else {
+                    set_toast("Only 1 tab open (Actions -> New Tab)");
                 }
                 break;
             }
@@ -1069,6 +1095,16 @@ void PcmanfmApp::draw_modals(void) {
                 if (m_cfg.dual_pane) refresh_tab(cur_tab(1));
                 m_show_actions_menu = false;
             }
+            if (ImGui::Button("New Tab", ImVec2(320, 0))) {
+                open_new_tab(m_active_pane, tab.path.c_str());
+                m_show_actions_menu = false;
+            }
+            if (m_panes[m_active_pane].tabs.size() > 1) {
+                if (ImGui::Button("Close Current Tab", ImVec2(320, 0))) {
+                    close_tab(m_active_pane, m_panes[m_active_pane].active_tab);
+                    m_show_actions_menu = false;
+                }
+            }
             if (ImGui::Button("Preferences", ImVec2(320, 0))) {
                 m_show_actions_menu = false;
                 m_show_prefs = true;
@@ -1278,15 +1314,15 @@ void PcmanfmApp::draw_modals(void) {
         if (!m_show_help) {
             ImGui::CloseCurrentPopup();
         } else {
-            ImGui::Text("PCManFM-PS4 v01.10 (Orbis OS File Manager)");
+            ImGui::Text("PCManFM-PS4 v01.11 (Orbis OS File Manager)");
             ImGui::Separator();
             ImGui::Text("D-Pad Up/Down      : Move selection");
-            ImGui::Text("D-Pad Left/Right   : Switch pane (Dual Pane)");
+            ImGui::Text("D-Pad Left/Right   : Parent/Enter (or Switch Pane)");
             ImGui::Text("Cross (X)          : Open folder / Preview file");
             ImGui::Text("Circle (O)         : Go up / Close dialog");
             ImGui::Text("Square ([])        : Toggle item selection");
             ImGui::Text("Triangle (/\\)      : Actions menu (Copy/Cut/Paste/Rename/Delete)");
-            ImGui::Text("L1 / R1            : Switch tabs");
+            ImGui::Text("L1 / R1            : Switch tabs (or Switch Pane)");
             ImGui::Text("Select / Share     : Toggle hidden files");
             ImGui::Text("Options            : Preferences");
             ImGui::Text("FTP Debug Log      : /data/pcmanfm/log.txt");
