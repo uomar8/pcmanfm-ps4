@@ -3,6 +3,7 @@
 
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <orbis/libkernel.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -395,18 +396,37 @@ static bool copy_single_file(const char* src, const char* dst, FileOpProgress* p
     return ok;
 }
 
+static bool vfs_probe_is_dir(const char* path, bool& out_is_dir, FileOpProgress* prog) {
+    struct stat st;
+    if (lstat(path, &st) == 0) {
+        out_is_dir = S_ISDIR(st.st_mode);
+        return true;
+    }
+    DIR* probe = opendir(path);
+    if (probe) {
+        closedir(probe);
+        out_is_dir = true;
+        return true;
+    }
+    if (access(path, F_OK) == 0) {
+        out_is_dir = false;
+        return true;
+    }
+    snprintf(prog->error_msg, sizeof(prog->error_msg), "Cannot access: %s (%s)", path, strerror(errno));
+    return false;
+}
+
 static bool copy_recursive(const char* src, const char* dst, FileOpProgress* prog, uint8_t* io_buf, size_t io_buf_sz) {
     if (__atomic_load_n(&prog->cancel_req, __ATOMIC_ACQUIRE)) return false;
 
     snprintf(prog->current_file, sizeof(prog->current_file), "%s", src);
 
-    struct stat st;
-    if (lstat(src, &st) != 0) {
-        snprintf(prog->error_msg, sizeof(prog->error_msg), "stat failed: %s (%s)", src, strerror(errno));
+    bool is_dir = false;
+    if (!vfs_probe_is_dir(src, is_dir, prog)) {
         return false;
     }
 
-    if (S_ISDIR(st.st_mode)) {
+    if (is_dir) {
         mkdir(dst, 0777);
         DIR* dir = opendir(src);
         if (!dir) {
@@ -442,13 +462,12 @@ static bool delete_recursive(const char* target, FileOpProgress* prog) {
     if (__atomic_load_n(&prog->cancel_req, __ATOMIC_ACQUIRE)) return false;
     snprintf(prog->current_file, sizeof(prog->current_file), "%s", target);
 
-    struct stat st;
-    if (lstat(target, &st) != 0) {
-        snprintf(prog->error_msg, sizeof(prog->error_msg), "stat failed: %s (%s)", target, strerror(errno));
+    bool is_dir = false;
+    if (!vfs_probe_is_dir(target, is_dir, prog)) {
         return false;
     }
 
-    if (S_ISDIR(st.st_mode)) {
+    if (is_dir) {
         DIR* dir = opendir(target);
         if (!dir) {
             snprintf(prog->error_msg, sizeof(prog->error_msg), "opendir failed: %s (%s)", target, strerror(errno));

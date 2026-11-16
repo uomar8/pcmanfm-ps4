@@ -102,6 +102,7 @@ private:
     // Sidebar tree root
     std::string m_tree_root;
     bool m_exit_requested;
+    bool m_scroll_to_cursor;
 
     // Helpers
     void load_config(void);

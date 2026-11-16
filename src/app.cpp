@@ -74,7 +74,8 @@ PcmanfmApp::PcmanfmApp()
       m_ime_using_ps4(false),
       m_ime_fallback_open(false),
       m_tree_root("/data"),
-      m_exit_requested(false) {
+      m_exit_requested(false),
+      m_scroll_to_cursor(false) {
     memset(&m_op_prog, 0, sizeof(m_op_prog));
     memset(m_ime_title, 0, sizeof(m_ime_title));
     memset(m_ime_buf, 0, sizeof(m_ime_buf));
@@ -802,6 +803,10 @@ void PcmanfmApp::draw_file_list(int pane_idx, TabState& tab) {
                     open_entry(tab, i);
                 }
             }
+            if (is_cur && m_scroll_to_cursor) {
+                ImGui::SetScrollHereY(0.5f);
+                m_scroll_to_cursor = false;
+            }
             if (ImGui::IsItemClicked(1)) {
                 m_active_pane = pane_idx;
                 tab.cursor_idx = i;
@@ -986,66 +991,96 @@ void PcmanfmApp::draw_status_bar(void) {
 void PcmanfmApp::draw_modals(void) {
     TabState& tab = active_tab();
 
-    if (m_show_actions_menu) ImGui::OpenPopup("ActionsMenu");
+    if (m_show_actions_menu && !ImGui::IsPopupOpen("ActionsMenu")) ImGui::OpenPopup("ActionsMenu");
     if (ImGui::BeginPopupModal("ActionsMenu", &m_show_actions_menu, ImGuiWindowFlags_AlwaysAutoResize)) {
-        if (ImGui::Button("Copy", ImVec2(280, 0))) { do_copy(false); m_show_actions_menu = false; }
-        if (ImGui::Button("Cut", ImVec2(280, 0))) { do_copy(true); m_show_actions_menu = false; }
-        if (ImGui::Button("Paste Here", ImVec2(280, 0))) { do_paste(); m_show_actions_menu = false; }
-        ImGui::Separator();
-        if (ImGui::Button("New Folder...", ImVec2(280, 0))) {
-            m_show_actions_menu = false;
-            start_ime(ImePurpose::NewFolder, "New Folder Name", "NewFolder");
-        }
-        if (ImGui::Button("Rename...", ImVec2(280, 0))) {
-            m_show_actions_menu = false;
-            if (tab.cursor_idx >= 0 && tab.cursor_idx < (int)tab.entries.size()) {
-                const DirEntry& ent = tab.entries[tab.cursor_idx];
-                start_ime(ImePurpose::Rename, "Rename Item", ent.name.c_str(), ent.full_path.c_str());
+        if (!m_show_actions_menu) {
+            ImGui::CloseCurrentPopup();
+        } else {
+            if (ImGui::Button("Copy", ImVec2(320, 0))) { do_copy(false); m_show_actions_menu = false; }
+            ImGui::SetItemDefaultFocus();
+            if (ImGui::Button("Cut", ImVec2(320, 0))) { do_copy(true); m_show_actions_menu = false; }
+            if (ImGui::Button("Paste Here", ImVec2(320, 0))) { do_paste(); m_show_actions_menu = false; }
+            ImGui::Separator();
+            if (ImGui::Button("New Folder...", ImVec2(320, 0))) {
+                m_show_actions_menu = false;
+                start_ime(ImePurpose::NewFolder, "New Folder Name", "NewFolder");
             }
-        }
-        if (ImGui::Button("Delete", ImVec2(280, 0))) {
-            m_show_actions_menu = false;
-            if (m_cfg.confirm_delete) m_show_delete_confirm = true;
-            else do_delete_confirmed();
-        }
-        ImGui::Separator();
-        if (ImGui::Button("Properties", ImVec2(280, 0))) {
-            m_show_actions_menu = false;
-            if (tab.cursor_idx >= 0 && tab.cursor_idx < (int)tab.entries.size()) {
-                m_inspect_entry = tab.entries[tab.cursor_idx];
-                m_show_properties = true;
+            if (ImGui::Button("Rename...", ImVec2(320, 0))) {
+                m_show_actions_menu = false;
+                if (tab.cursor_idx >= 0 && tab.cursor_idx < (int)tab.entries.size()) {
+                    const DirEntry& ent = tab.entries[tab.cursor_idx];
+                    start_ime(ImePurpose::Rename, "Rename Item", ent.name.c_str(), ent.full_path.c_str());
+                }
             }
+            if (ImGui::Button("Delete", ImVec2(320, 0))) {
+                m_show_actions_menu = false;
+                if (m_cfg.confirm_delete) m_show_delete_confirm = true;
+                else do_delete_confirmed();
+            }
+            ImGui::Separator();
+            if (ImGui::Button("Properties", ImVec2(320, 0))) {
+                m_show_actions_menu = false;
+                if (tab.cursor_idx >= 0 && tab.cursor_idx < (int)tab.entries.size()) {
+                    m_inspect_entry = tab.entries[tab.cursor_idx];
+                    m_show_properties = true;
+                }
+            }
+            if (ImGui::Button("Go to Path...", ImVec2(320, 0))) {
+                m_show_actions_menu = false;
+                start_ime(ImePurpose::GoToPath, "Go to Path", tab.path.c_str());
+            }
+            if (ImGui::Button(m_cfg.dual_pane ? "Single Pane Mode" : "Dual Pane Mode", ImVec2(320, 0))) {
+                m_cfg.dual_pane = !m_cfg.dual_pane;
+                if (m_cfg.dual_pane) refresh_tab(cur_tab(1));
+                m_show_actions_menu = false;
+            }
+            if (ImGui::Button("Preferences", ImVec2(320, 0))) {
+                m_show_actions_menu = false;
+                m_show_prefs = true;
+            }
+            if (ImGui::Button("Controls & Help", ImVec2(320, 0))) {
+                m_show_actions_menu = false;
+                m_show_help = true;
+            }
+            if (ImGui::Button("Exit to XMB", ImVec2(320, 0))) {
+                m_show_actions_menu = false;
+                m_exit_requested = true;
+            }
+            ImGui::Separator();
+            if (ImGui::Button("Close (Circle)", ImVec2(320, 0))) m_show_actions_menu = false;
         }
-        if (ImGui::Button("Go to Path...", ImVec2(280, 0))) {
-            m_show_actions_menu = false;
-            start_ime(ImePurpose::GoToPath, "Go to Path", tab.path.c_str());
-        }
-        if (ImGui::Button("Close (Circle)", ImVec2(280, 0))) m_show_actions_menu = false;
         ImGui::EndPopup();
     }
 
-    if (m_show_delete_confirm) ImGui::OpenPopup("Confirm Delete");
+    if (m_show_delete_confirm && !ImGui::IsPopupOpen("Confirm Delete")) ImGui::OpenPopup("Confirm Delete");
     if (ImGui::BeginPopupModal("Confirm Delete", &m_show_delete_confirm, ImGuiWindowFlags_AlwaysAutoResize)) {
-        std::vector<std::string> targets;
-        gather_selected_paths(tab, targets);
-        ImGui::Text("Permanently delete %zu selected item(s)?", targets.size());
-        if (!targets.empty()) {
-            ImGui::TextDisabled("%s%s", targets[0].c_str(), targets.size() > 1 ? " (+ more)" : "");
-        }
-        ImGui::Separator();
-        if (ImGui::Button("Delete", ImVec2(140, 0))) {
-            m_show_delete_confirm = false;
-            do_delete_confirmed();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(140, 0))) {
-            m_show_delete_confirm = false;
+        if (!m_show_delete_confirm) {
+            ImGui::CloseCurrentPopup();
+        } else {
+            std::vector<std::string> targets;
+            gather_selected_paths(tab, targets);
+            ImGui::Text("Permanently delete %zu selected item(s)?", targets.size());
+            if (!targets.empty()) {
+                ImGui::TextDisabled("%s%s", targets[0].c_str(), targets.size() > 1 ? " (+ more)" : "");
+            }
+            ImGui::Separator();
+            if (ImGui::Button("Cancel (Circle)", ImVec2(170, 0))) {
+                m_show_delete_confirm = false;
+            }
+            ImGui::SetItemDefaultFocus();
+            ImGui::SameLine();
+            if (ImGui::Button("Delete", ImVec2(140, 0))) {
+                m_show_delete_confirm = false;
+                do_delete_confirmed();
+            }
         }
         ImGui::EndPopup();
     }
 
     if (m_show_op_modal) {
-        ImGui::OpenPopup("File Operation");
+        if (!ImGui::IsPopupOpen("File Operation")) {
+            ImGui::OpenPopup("File Operation");
+        }
         if (__atomic_load_n(&m_op_prog.done, __ATOMIC_ACQUIRE)) {
             vfs_poll_file_op_join(&m_op_prog);
             m_show_op_modal = false;
@@ -1059,186 +1094,222 @@ void PcmanfmApp::draw_modals(void) {
         }
     }
     if (ImGui::BeginPopupModal("File Operation", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
-        const char* opname = (m_op_prog.type == FileOpType::Copy) ? "Copying..."
-                           : (m_op_prog.type == FileOpType::Move) ? "Moving..." : "Deleting...";
-        ImGui::Text("%s", opname);
-        ImGui::Text("Current: %s", m_op_prog.current_file);
-        char bbuf[48];
-        vfs_format_size(m_op_prog.bytes_done, bbuf, sizeof(bbuf));
-        ImGui::Text("Items: %llu | Bytes: %s", (unsigned long long)m_op_prog.items_done, bbuf);
-        if (ImGui::Button("Cancel", ImVec2(160, 0))) {
-            __atomic_store_n(&m_op_prog.cancel_req, 1, __ATOMIC_RELEASE);
+        if (!m_show_op_modal) {
+            ImGui::CloseCurrentPopup();
+        } else {
+            const char* opname = (m_op_prog.type == FileOpType::Copy) ? "Copying..."
+                               : (m_op_prog.type == FileOpType::Move) ? "Moving..." : "Deleting...";
+            ImGui::Text("%s", opname);
+            ImGui::Text("Current: %s", m_op_prog.current_file);
+            char bbuf[48];
+            vfs_format_size(m_op_prog.bytes_done, bbuf, sizeof(bbuf));
+            ImGui::Text("Items: %llu | Bytes: %s", (unsigned long long)m_op_prog.items_done, bbuf);
+            if (ImGui::Button("Cancel (Circle)", ImVec2(180, 0))) {
+                __atomic_store_n(&m_op_prog.cancel_req, 1, __ATOMIC_RELEASE);
+            }
+            ImGui::SetItemDefaultFocus();
         }
         ImGui::EndPopup();
     }
 
-    if (m_show_properties) ImGui::OpenPopup("Properties");
+    if (m_show_properties && !ImGui::IsPopupOpen("Properties")) ImGui::OpenPopup("Properties");
     if (ImGui::BeginPopupModal("Properties", &m_show_properties, ImGuiWindowFlags_AlwaysAutoResize)) {
-        char sz[48], mbuf[16];
-        vfs_format_size(m_inspect_entry.size, sz, sizeof(sz));
-        vfs_format_mode(m_inspect_entry.mode, m_inspect_entry.is_dir, m_inspect_entry.is_symlink, mbuf, sizeof(mbuf));
-        ImGui::Text("Name: %s", m_inspect_entry.name.c_str());
-        ImGui::Text("Path: %s", m_inspect_entry.full_path.c_str());
-        ImGui::Text("Type: %s", vfs_category_name(m_inspect_entry.category));
-        ImGui::Text("Size: %s (%llu bytes)", sz, (unsigned long long)m_inspect_entry.size);
-        ImGui::Text("Mode: %s (0%o)", mbuf, m_inspect_entry.mode);
-        ImGui::Separator();
-        if (ImGui::Button("View as Text", ImVec2(150, 0))) {
-            m_show_properties = false;
-            m_preview_data.clear();
-            vfs_read_file_preview(m_inspect_entry.full_path.c_str(), 65536, m_preview_data, m_preview_total_size, m_preview_error);
-            m_show_text_viewer = true;
+        if (!m_show_properties) {
+            ImGui::CloseCurrentPopup();
+        } else {
+            char sz[48], mbuf[16];
+            vfs_format_size(m_inspect_entry.size, sz, sizeof(sz));
+            vfs_format_mode(m_inspect_entry.mode, m_inspect_entry.is_dir, m_inspect_entry.is_symlink, mbuf, sizeof(mbuf));
+            ImGui::Text("Name: %s", m_inspect_entry.name.c_str());
+            ImGui::Text("Path: %s", m_inspect_entry.full_path.c_str());
+            ImGui::Text("Type: %s", vfs_category_name(m_inspect_entry.category));
+            ImGui::Text("Size: %s (%llu bytes)", sz, (unsigned long long)m_inspect_entry.size);
+            ImGui::Text("Mode: %s (0%o)", mbuf, m_inspect_entry.mode);
+            ImGui::Separator();
+            if (ImGui::Button("View as Text", ImVec2(150, 0))) {
+                m_show_properties = false;
+                m_preview_data.clear();
+                vfs_read_file_preview(m_inspect_entry.full_path.c_str(), 65536, m_preview_data, m_preview_total_size, m_preview_error);
+                m_show_text_viewer = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Hex View", ImVec2(150, 0))) {
+                m_show_properties = false;
+                m_preview_data.clear();
+                vfs_read_file_preview(m_inspect_entry.full_path.c_str(), 16384, m_preview_data, m_preview_total_size, m_preview_error);
+                m_show_hex_viewer = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Close (Circle)", ImVec2(160, 0))) m_show_properties = false;
+            ImGui::SetItemDefaultFocus();
         }
-        ImGui::SameLine();
-        if (ImGui::Button("Hex View", ImVec2(150, 0))) {
-            m_show_properties = false;
-            m_preview_data.clear();
-            vfs_read_file_preview(m_inspect_entry.full_path.c_str(), 16384, m_preview_data, m_preview_total_size, m_preview_error);
-            m_show_hex_viewer = true;
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Close", ImVec2(120, 0))) m_show_properties = false;
         ImGui::EndPopup();
     }
 
-    if (m_show_text_viewer) ImGui::OpenPopup("Text Viewer");
+    if (m_show_text_viewer && !ImGui::IsPopupOpen("Text Viewer")) ImGui::OpenPopup("Text Viewer");
     ImGui::SetNextWindowSize(ImVec2(1280, 760), ImGuiCond_FirstUseEver);
     if (ImGui::BeginPopupModal("Text Viewer", &m_show_text_viewer)) {
-        ImGui::Text("File: %s (%llu bytes, showing %zu bytes)",
-                    m_inspect_entry.full_path.c_str(),
-                    (unsigned long long)m_preview_total_size,
-                    m_preview_data.size());
-        ImGui::Separator();
-        ImGui::BeginChild("TextBody", ImVec2(0, -50), true);
-        if (!m_preview_error.empty()) {
-            ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", m_preview_error.c_str());
-        } else if (!m_preview_data.empty()) {
-            ImGui::TextUnformatted((const char*)m_preview_data.data(),
-                                   (const char*)m_preview_data.data() + m_preview_data.size());
+        if (!m_show_text_viewer) {
+            ImGui::CloseCurrentPopup();
         } else {
-            ImGui::TextDisabled("(Empty file)");
+            ImGui::Text("File: %s (%llu bytes, showing %zu bytes)",
+                        m_inspect_entry.full_path.c_str(),
+                        (unsigned long long)m_preview_total_size,
+                        m_preview_data.size());
+            ImGui::Separator();
+            ImGui::BeginChild("TextBody", ImVec2(0, -50), true);
+            if (!m_preview_error.empty()) {
+                ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", m_preview_error.c_str());
+            } else if (!m_preview_data.empty()) {
+                ImGui::TextUnformatted((const char*)m_preview_data.data(),
+                                       (const char*)m_preview_data.data() + m_preview_data.size());
+            } else {
+                ImGui::TextDisabled("(Empty file)");
+            }
+            ImGui::EndChild();
+            if (ImGui::Button("Switch to Hex", ImVec2(160, 0))) {
+                m_show_text_viewer = false;
+                m_show_hex_viewer = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Close (Circle)", ImVec2(160, 0))) m_show_text_viewer = false;
+            ImGui::SetItemDefaultFocus();
         }
-        ImGui::EndChild();
-        if (ImGui::Button("Switch to Hex", ImVec2(160, 0))) {
-            m_show_text_viewer = false;
-            m_show_hex_viewer = true;
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Close", ImVec2(140, 0))) m_show_text_viewer = false;
         ImGui::EndPopup();
     }
 
-    if (m_show_hex_viewer) ImGui::OpenPopup("Hex Viewer");
+    if (m_show_hex_viewer && !ImGui::IsPopupOpen("Hex Viewer")) ImGui::OpenPopup("Hex Viewer");
     ImGui::SetNextWindowSize(ImVec2(1280, 760), ImGuiCond_FirstUseEver);
     if (ImGui::BeginPopupModal("Hex Viewer", &m_show_hex_viewer)) {
-        ImGui::Text("Hex: %s (%llu bytes)", m_inspect_entry.full_path.c_str(), (unsigned long long)m_preview_total_size);
-        ImGui::Separator();
-        ImGui::BeginChild("HexBody", ImVec2(0, -50), true);
-        for (size_t off = 0; off < m_preview_data.size(); off += 16) {
-            char line[128];
-            int pos = snprintf(line, sizeof(line), "%08zX: ", off);
-            for (size_t j = 0; j < 16; ++j) {
-                if (off + j < m_preview_data.size()) {
-                    pos += snprintf(line + pos, sizeof(line) - pos, "%02X ", m_preview_data[off + j]);
-                } else {
-                    pos += snprintf(line + pos, sizeof(line) - pos, "   ");
+        if (!m_show_hex_viewer) {
+            ImGui::CloseCurrentPopup();
+        } else {
+            ImGui::Text("Hex: %s (%llu bytes)", m_inspect_entry.full_path.c_str(), (unsigned long long)m_preview_total_size);
+            ImGui::Separator();
+            ImGui::BeginChild("HexBody", ImVec2(0, -50), true);
+            for (size_t off = 0; off < m_preview_data.size(); off += 16) {
+                char line[128];
+                int pos = snprintf(line, sizeof(line), "%08zX: ", off);
+                for (size_t j = 0; j < 16; ++j) {
+                    if (off + j < m_preview_data.size()) {
+                        pos += snprintf(line + pos, sizeof(line) - pos, "%02X ", m_preview_data[off + j]);
+                    } else {
+                        pos += snprintf(line + pos, sizeof(line) - pos, "   ");
+                    }
                 }
+                pos += snprintf(line + pos, sizeof(line) - pos, " |");
+                for (size_t j = 0; j < 16 && off + j < m_preview_data.size(); ++j) {
+                    uint8_t c = m_preview_data[off + j];
+                    line[pos++] = (c >= 32 && c < 127) ? (char)c : '.';
+                }
+                line[pos++] = '|';
+                line[pos] = '\0';
+                ImGui::TextUnformatted(line);
             }
-            pos += snprintf(line + pos, sizeof(line) - pos, " |");
-            for (size_t j = 0; j < 16 && off + j < m_preview_data.size(); ++j) {
-                uint8_t c = m_preview_data[off + j];
-                line[pos++] = (c >= 32 && c < 127) ? (char)c : '.';
-            }
-            line[pos++] = '|';
-            line[pos] = '\0';
-            ImGui::TextUnformatted(line);
+            ImGui::EndChild();
+            if (ImGui::Button("Close (Circle)", ImVec2(160, 0))) m_show_hex_viewer = false;
+            ImGui::SetItemDefaultFocus();
         }
-        ImGui::EndChild();
-        if (ImGui::Button("Close", ImVec2(140, 0))) m_show_hex_viewer = false;
         ImGui::EndPopup();
     }
 
-    if (m_show_prefs) ImGui::OpenPopup("Preferences");
+    if (m_show_prefs && !ImGui::IsPopupOpen("Preferences")) ImGui::OpenPopup("Preferences");
     if (ImGui::BeginPopupModal("Preferences", &m_show_prefs, ImGuiWindowFlags_AlwaysAutoResize)) {
-        if (ImGui::Checkbox("Dark Theme", &m_cfg.dark_theme)) apply_theme();
-        if (ImGui::Checkbox("Show Hidden Files", &m_cfg.show_hidden)) {
-            refresh_tab(m_panes[0].tabs[m_panes[0].active_tab]);
-            if (m_cfg.dual_pane) refresh_tab(m_panes[1].tabs[m_panes[1].active_tab]);
-        }
-        ImGui::Checkbox("Dual Pane Mode", &m_cfg.dual_pane);
-        ImGui::Checkbox("Confirm Before Delete", &m_cfg.confirm_delete);
-        if (ImGui::SliderFloat("UI Scale", &m_cfg.ui_scale, 1.1f, 2.2f, "%.2f")) {
-            ImGui::GetIO().FontGlobalScale = m_cfg.ui_scale;
-        }
-        ImGui::Separator();
-        if (ImGui::Button("Save & Close", ImVec2(160, 0))) {
-            save_config();
-            m_show_prefs = false;
+        if (!m_show_prefs) {
+            ImGui::CloseCurrentPopup();
+        } else {
+            if (ImGui::Checkbox("Dark Theme", &m_cfg.dark_theme)) apply_theme();
+            if (ImGui::Checkbox("Show Hidden Files", &m_cfg.show_hidden)) {
+                refresh_tab(m_panes[0].tabs[m_panes[0].active_tab]);
+                if (m_cfg.dual_pane) refresh_tab(m_panes[1].tabs[m_panes[1].active_tab]);
+            }
+            ImGui::Checkbox("Dual Pane Mode", &m_cfg.dual_pane);
+            ImGui::Checkbox("Confirm Before Delete", &m_cfg.confirm_delete);
+            if (ImGui::SliderFloat("UI Scale", &m_cfg.ui_scale, 1.1f, 2.2f, "%.2f")) {
+                ImGui::GetIO().FontGlobalScale = m_cfg.ui_scale;
+            }
+            ImGui::Separator();
+            if (ImGui::Button("Save & Close", ImVec2(160, 0))) {
+                save_config();
+                m_show_prefs = false;
+            }
+            ImGui::SetItemDefaultFocus();
         }
         ImGui::EndPopup();
     }
 
-    if (m_show_help) ImGui::OpenPopup("PCManFM-PS4 Help");
+    if (m_show_help && !ImGui::IsPopupOpen("PCManFM-PS4 Help")) ImGui::OpenPopup("PCManFM-PS4 Help");
     if (ImGui::BeginPopupModal("PCManFM-PS4 Help", &m_show_help, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("PCManFM-PS4 v01.01 (Orbis OS File Manager)");
-        ImGui::Separator();
-        ImGui::Text("D-Pad / Left Stick : Navigate list & UI");
-        ImGui::Text("Cross (X)          : Open folder / Preview file");
-        ImGui::Text("Circle (O)         : Go up / Close dialog");
-        ImGui::Text("Square ([])        : Toggle item selection");
-        ImGui::Text("Triangle (/\\)      : Actions menu (Copy/Cut/Paste/Rename/Delete)");
-        ImGui::Text("L1 / R1            : Switch tabs");
-        ImGui::Text("Select / Share     : Toggle hidden files");
-        ImGui::Text("Options            : Preferences");
-        ImGui::Text("FTP Debug Log      : /data/pcmanfm/log.txt");
-        ImGui::Separator();
-        if (ImGui::Button("Close", ImVec2(140, 0))) m_show_help = false;
+        if (!m_show_help) {
+            ImGui::CloseCurrentPopup();
+        } else {
+            ImGui::Text("PCManFM-PS4 v01.08 (Orbis OS File Manager)");
+            ImGui::Separator();
+            ImGui::Text("D-Pad Up/Down      : Move selection");
+            ImGui::Text("D-Pad Left/Right   : Switch pane (Dual Pane)");
+            ImGui::Text("Cross (X)          : Open folder / Preview file");
+            ImGui::Text("Circle (O)         : Go up / Close dialog");
+            ImGui::Text("Square ([])        : Toggle item selection");
+            ImGui::Text("Triangle (/\\)      : Actions menu (Copy/Cut/Paste/Rename/Delete)");
+            ImGui::Text("L1 / R1            : Switch tabs");
+            ImGui::Text("Select / Share     : Toggle hidden files");
+            ImGui::Text("Options            : Preferences");
+            ImGui::Text("FTP Debug Log      : /data/pcmanfm/log.txt");
+            ImGui::Separator();
+            if (ImGui::Button("Close (Circle)", ImVec2(160, 0))) m_show_help = false;
+            ImGui::SetItemDefaultFocus();
+        }
         ImGui::EndPopup();
     }
 
-    if (m_ime_fallback_open) ImGui::OpenPopup("Text Input");
+    if (m_ime_fallback_open && !ImGui::IsPopupOpen("Text Input")) ImGui::OpenPopup("Text Input");
     if (ImGui::BeginPopupModal("Text Input", &m_ime_fallback_open, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("%s", m_ime_title);
-        ImGui::SetNextItemWidth(680.0f);
-        ImGui::InputText("##ime_fb", m_ime_buf, sizeof(m_ime_buf));
+        if (!m_ime_fallback_open) {
+            ImGui::CloseCurrentPopup();
+        } else {
+            ImGui::Text("%s", m_ime_title);
+            ImGui::SetNextItemWidth(680.0f);
+            ImGui::InputText("##ime_fb", m_ime_buf, sizeof(m_ime_buf));
 
-        static const char* rows[] = {
-            "1234567890/-_.",
-            "qwertyuiop",
-            "asdfghjkl",
-            "zxcvbnm "
-        };
-        for (int r = 0; r < 4; ++r) {
-            const char* row = rows[r];
-            for (int c = 0; row[c]; ++c) {
-                if (c > 0) ImGui::SameLine();
-                char klabel[16];
-                if (row[c] == ' ') snprintf(klabel, sizeof(klabel), "Space##osk_%d_%d", r, c);
-                else snprintf(klabel, sizeof(klabel), "%c##osk_%d_%d", row[c], r, c);
-                if (ImGui::Button(klabel, ImVec2(row[c] == ' ' ? 90.0f : 42.0f, 38.0f))) {
-                    size_t len = strlen(m_ime_buf);
-                    if (len + 1 < sizeof(m_ime_buf)) {
-                        m_ime_buf[len] = row[c];
-                        m_ime_buf[len + 1] = '\0';
+            static const char* rows[] = {
+                "1234567890/-_.",
+                "qwertyuiop",
+                "asdfghjkl",
+                "zxcvbnm "
+            };
+            for (int r = 0; r < 4; ++r) {
+                const char* row = rows[r];
+                for (int c = 0; row[c]; ++c) {
+                    if (c > 0) ImGui::SameLine();
+                    char klabel[16];
+                    if (row[c] == ' ') snprintf(klabel, sizeof(klabel), "Space##osk_%d_%d", r, c);
+                    else snprintf(klabel, sizeof(klabel), "%c##osk_%d_%d", row[c], r, c);
+                    if (ImGui::Button(klabel, ImVec2(row[c] == ' ' ? 90.0f : 42.0f, 38.0f))) {
+                        size_t len = strlen(m_ime_buf);
+                        if (len + 1 < sizeof(m_ime_buf)) {
+                            m_ime_buf[len] = row[c];
+                            m_ime_buf[len + 1] = '\0';
+                        }
                     }
                 }
             }
-        }
-        if (ImGui::Button("Backspace", ImVec2(140, 38))) {
-            size_t len = strlen(m_ime_buf);
-            if (len > 0) m_ime_buf[len - 1] = '\0';
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Clear", ImVec2(100, 38))) {
-            m_ime_buf[0] = '\0';
-        }
-        ImGui::Separator();
-        if (ImGui::Button("OK", ImVec2(140, 0))) {
-            finish_ime(m_ime_buf);
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(140, 0))) {
-            finish_ime(NULL);
+            if (ImGui::Button("Backspace", ImVec2(140, 38))) {
+                size_t len = strlen(m_ime_buf);
+                if (len > 0) m_ime_buf[len - 1] = '\0';
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Clear", ImVec2(100, 38))) {
+                m_ime_buf[0] = '\0';
+            }
+            ImGui::Separator();
+            if (ImGui::Button("OK", ImVec2(140, 0))) {
+                finish_ime(m_ime_buf);
+            }
+            ImGui::SetItemDefaultFocus();
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel (Circle)", ImVec2(160, 0))) {
+                finish_ime(NULL);
+            }
         }
         ImGui::EndPopup();
     }
@@ -1246,6 +1317,18 @@ void PcmanfmApp::draw_modals(void) {
 
 void PcmanfmApp::render_frame(void) {
     poll_ime();
+
+    // Enable ImGui Gamepad Nav ONLY when a modal/popup/menu is open so main file list D-Pad nav never conflicts
+    bool any_popup = m_show_actions_menu || m_show_delete_confirm || m_show_properties ||
+                     m_show_text_viewer || m_show_hex_viewer || m_show_prefs ||
+                     m_show_help || m_show_op_modal || m_ime_fallback_open ||
+                     ImGui::IsPopupOpen(NULL, ImGuiPopupFlags_AnyPopupId);
+    ImGuiIO& io = ImGui::GetIO();
+    if (any_popup) {
+        io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+    } else {
+        io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableGamepad;
+    }
 
     ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(vp->WorkPos);
