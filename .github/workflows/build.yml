@@ -1,0 +1,67 @@
+name: Build PS4 PKG
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-ps4:
+    runs-on: ubuntu-22.04
+    env:
+      OO_PS4_TOOLCHAIN: /home/runner/OpenOrbis-PS4-Toolchain
+      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
+      DOTNET_BUNDLE_EXTRACT_BASE_DIR: "/tmp/dotnet_extract"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Install clang, lld, cmake & libssl1.1
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm cmake ninja-build wget git
+          wget -q http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+          sudo dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+
+      - name: Cache OpenOrbis v0.5.4 + SDL2-PS4
+        id: cache-oo
+        uses: actions/cache@v6
+        with:
+          path: /home/runner/OpenOrbis-PS4-Toolchain
+          key: openorbis-v0.5.4-sdl2-ps4-v1
+
+      - name: Download & Extract OpenOrbis v0.5.4
+        if: steps.cache-oo.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p /tmp/oo-extract "$OO_PS4_TOOLCHAIN"
+          wget -qO /tmp/oo.tar.gz https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.4/toolchain-llvm-18.tar.gz
+          tar -xzf /tmp/oo.tar.gz -C /tmp/oo-extract
+          OO_ROOT=$(dirname "$(find /tmp/oo-extract -type d -name lib | head -n 1)")
+          cp -r "$OO_ROOT"/* "$OO_PS4_TOOLCHAIN"/
+          chmod +x "$OO_PS4_TOOLCHAIN"/bin/linux/*
+
+      - name: Build & Install bucanero/SDL-PS4 (libSDL2.a)
+        if: steps.cache-oo.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch ps4 https://github.com/bucanero/SDL-PS4.git /tmp/SDL-PS4
+          cmake -S /tmp/SDL-PS4 -B /tmp/SDL-PS4/build -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=/tmp/SDL-PS4/cmake/openorbis.cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_FLAGS="-march=btver2 -mtune=btver2" \
+            -DSDL_SHARED=OFF -DSDL_STATIC=ON \
+            -DSDL_TEST=OFF -DSDL_AUDIO=OFF \
+            -DCMAKE_INSTALL_PREFIX="$OO_PS4_TOOLCHAIN/usr"
+          cmake --build /tmp/SDL-PS4/build -j"$(nproc)"
+          cmake --install /tmp/SDL-PS4/build
+
+      - name: Build PCManFM-PS4 PKG
+        run: make -j"$(nproc)"
+
+      - name: Upload PS4 PKG (unarchived)
+        uses: actions/upload-artifact@v7
+        with:
+          path: "*.pkg"
+          archive: false
